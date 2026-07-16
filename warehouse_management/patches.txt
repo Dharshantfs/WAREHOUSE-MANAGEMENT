@@ -1,0 +1,2 @@
+# Add patches here
+# Format: warehouse_management.patches.<patch_module>
