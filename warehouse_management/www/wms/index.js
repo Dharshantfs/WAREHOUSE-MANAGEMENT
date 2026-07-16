@@ -1,122 +1,141 @@
-// WMS Portal Javascript Logic - Jayashree Spun Bond
+// WMS Portal JavaScript Logic - Jayashree Spun Bond
 document.addEventListener('DOMContentLoaded', function () {
     // --- STATE MANAGEMENT ---
     let appState = {
         isDemoMode: true, // Will auto-toggle if Frappe APIs fail
-        bays: [],
+        batches: [],      // Holds all batches/rolls
+        bays: [],         // Holds aggregated bay data
         currentBayDetails: null,
         selectedBayName: '',
-        activeUnit: 'unit_3',
-        mockDatabase: {} // In-memory DB for demo mode
+        activeUnit: 'unit_3', // Matches filter selector
+        activeTab: 'dashboard',
+        mockDatabase: {}, // Local copy for Demo Mode
+        charts: {
+            items: null,
+            company: null
+        }
     };
 
-    // --- MOCK DATABASE (Matches User's Excel sheet exactly) ---
+    // --- UTILITIES ---
+    // Extract metadata from Roll/Batch ID (e.g. JS-0306261/22)
+    function parseBatchDetails(batchId) {
+        const match = batchId.match(/^([A-Za-z]+)-(\d{2})(\d{2})(\d{2})(\d+)\/(\d+)$/);
+        if (match) {
+            const rawCompany = match[1].toUpperCase();
+            let fullCompany = rawCompany;
+            let unit = parseInt(match[2], 10);
+            
+            if (rawCompany === 'JS') {
+                fullCompany = 'JAYASHREE SPUN BOND';
+            } else if (rawCompany === 'TS') {
+                fullCompany = 'THUSMA PRIVATE LIMITED';
+                unit = 4;
+            }
+
+            return {
+                company: fullCompany,
+                rawCompany,
+                unit,
+                month: match[3],
+                year: match[4],
+                series: match[5],
+                roll: match[6],
+                parsed: true
+            };
+        }
+        return { company: 'Unknown', rawCompany: 'Unknown', unit: 0, parsed: false };
+    }
+
+    // Determine batch status and colors
+    function getBatchStatus(batch) {
+        const qty = batch.batch_qty || batch.qty || 0;
+        if (qty <= 0) return { label: 'Out of Stock', class: 'status-badge text-muted' };
+        
+        if (batch.expiry_date) {
+            const expiry = new Date(batch.expiry_date);
+            const now = new Date();
+            const diffDays = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays < 0) return { label: 'Expired', class: 'status-badge expired' };
+            if (diffDays <= 30) return { label: 'Expiring Soon', class: 'status-badge expiring-soon' };
+        }
+
+        if (qty < 10) return { label: 'Low Stock', class: 'status-badge low-stock' };
+        return { label: 'In Stock', class: 'status-badge in-stock' };
+    }
+
+    // --- MOCK DATABASE (Demo fallback) ---
     function initializeMockDatabase() {
-        appState.mockDatabase = {
-            // Unit 3 mock inventory
-            unit_3: [
-                // Let's create exactly 22 rolls inside OUTSIDE that sum up to 971.32 KGs
-                // 971.32 / 22 = ~44.1509 KGs per roll
-                ...Array.from({ length: 22 }, (_, i) => {
-                    const rollNo = i + 1;
-                    const weight = rollNo === 22 ? 44.17 : 44.15; // adjust last roll so sum is exactly 971.32
-                    return {
-                        batch_no: `JS-0306261/${rollNo}`,
-                        custom_order_code: "ORD-2026-9901",
-                        manufacturing_date: "2026-06-01",
-                        expiry_date: "2027-06-01",
-                        custom_bay: "OUTSIDE",
-                        qty: weight
-                    };
-                }),
-                // Let's add some mock rolls to UNASSIGNED to simulate standard ERPNext batches that need a location
-                {
-                    batch_no: "JS-0306261/23",
-                    custom_order_code: "ORD-2026-9902",
-                    manufacturing_date: "2026-06-02",
-                    expiry_date: "2027-06-02",
-                    custom_bay: "UNASSIGNED",
-                    qty: 45.00
-                },
-                {
-                    batch_no: "JS-0306261/24",
-                    custom_order_code: "ORD-2026-9902",
-                    manufacturing_date: "2026-06-02",
-                    expiry_date: "2027-06-02",
-                    custom_bay: "UNASSIGNED",
-                    qty: 42.80
-                }
-            ],
-            unit_1: [
-                {
-                    batch_no: "JS-0106261/1",
-                    custom_order_code: "ORD-2026-1102",
-                    manufacturing_date: "2026-06-01",
-                    expiry_date: "2027-06-01",
-                    custom_bay: "B1",
-                    qty: 45.50
-                },
-                {
-                    batch_no: "JS-0106261/2",
-                    custom_order_code: "ORD-2026-1102",
-                    manufacturing_date: "2026-06-01",
-                    expiry_date: "2027-06-01",
-                    custom_bay: "B1",
-                    qty: 45.20
-                },
-                {
-                    batch_no: "JS-0106261/3",
-                    custom_order_code: "ORD-2026-1105",
-                    manufacturing_date: "2026-06-01",
-                    expiry_date: "2027-06-01",
-                    custom_bay: "B2",
-                    qty: 50.10
-                }
-            ],
-            unit_2: [
-                {
-                    batch_no: "JS-0206261/1",
-                    custom_order_code: "ORD-2026-8804",
-                    manufacturing_date: "2026-06-02",
-                    expiry_date: "2027-06-02",
-                    custom_bay: "B1",
-                    qty: 48.00
-                }
-            ]
-        };
+        // Build mock list mirroring React app and user's Excel sheet
+        const unit3Mock = Array.from({ length: 22 }, (_, i) => {
+            const rollNo = i + 1;
+            const weight = rollNo === 22 ? 44.17 : 44.15;
+            return {
+                name: `JS-0306261/${rollNo}`,
+                batch_id: `JS-0306261/${rollNo}`,
+                item: "JS-SPUN-BOND",
+                item_name: "Jayashree Spun Bond Roll",
+                batch_qty: weight,
+                qty: weight,
+                custom_bay: "OUTSIDE",
+                custom_order_code: "ORD-2026-9901",
+                manufacturing_date: "2026-06-01",
+                expiry_date: "2027-06-01"
+            };
+        });
+
+        // Additional mock rolls for other bays / units
+        const otherMock = [
+            { name: "JS-0306261/23", batch_id: "JS-0306261/23", item: "JS-SPUN-BOND", item_name: "Jayashree Spun Bond Roll", batch_qty: 45.00, qty: 45.00, custom_bay: "UNASSIGNED", custom_order_code: "ORD-2026-9902", manufacturing_date: "2026-06-02", expiry_date: "2027-06-02" },
+            { name: "JS-0306261/24", batch_id: "JS-0306261/24", item: "JS-SPUN-BOND", item_name: "Jayashree Spun Bond Roll", batch_qty: 42.80, qty: 42.80, custom_bay: "UNASSIGNED", custom_order_code: "ORD-2026-9902", manufacturing_date: "2026-06-02", expiry_date: "2027-06-02" },
+            { name: "JS-0106261/1", batch_id: "JS-0106261/1", item: "JS-SPUN-BOND", item_name: "Jayashree Spun Bond Roll", batch_qty: 50.50, qty: 50.50, custom_bay: "B1", custom_order_code: "ORD-2026-1102", manufacturing_date: "2026-06-01", expiry_date: "2027-06-01" },
+            { name: "JS-0106261/2", batch_id: "JS-0106261/2", item: "JS-SPUN-BOND", item_name: "Jayashree Spun Bond Roll", batch_qty: 45.20, qty: 45.20, custom_bay: "B1", custom_order_code: "ORD-2026-1102", manufacturing_date: "2026-06-01", expiry_date: "2027-06-01" },
+            { name: "JS-0106261/3", batch_id: "JS-0106261/3", item: "JS-SPUN-BOND", item_name: "Jayashree Spun Bond Roll", batch_qty: 52.10, qty: 52.10, custom_bay: "B2", custom_order_code: "ORD-2026-1105", manufacturing_date: "2026-06-01", expiry_date: "2027-06-01" },
+            { name: "JS-0205261/1", batch_id: "JS-0205261/1", item: "JS-SPUN-BOND", item_name: "Jayashree Spun Bond Roll", batch_qty: 40.20, qty: 40.20, custom_bay: "B1", custom_order_code: "ORD-2026-8804", manufacturing_date: "2026-05-20", expiry_date: "2027-05-20" }
+        ];
+
+        appState.mockDatabase = [...unit3Mock, ...otherMock];
     }
     initializeMockDatabase();
 
     // --- DOM ELEMENTS ---
-    const baysGrid = document.getElementById('bays-grid');
-    const totalBaysEl = document.getElementById('total-bays');
-    const totalRollsEl = document.getElementById('total-rolls');
-    const totalWeightEl = document.getElementById('total-weight');
     const refreshBtn = document.getElementById('refresh-btn');
     const demoModeBadge = document.getElementById('demo-mode-badge');
     const unitSelect = document.getElementById('unit-select');
+    const pageTitle = document.getElementById('page-title');
+    const pageSubtitle = document.getElementById('page-subtitle');
     
+    // KPI Cards
+    const totalWeightEl = document.getElementById('total-weight');
+    const totalLowStockEl = document.getElementById('total-low-stock');
+    const totalExpiringEl = document.getElementById('total-expiring');
+
+    // Sidebar & View Navigation
+    const navItems = document.querySelectorAll('.nav-item');
+    const tabContents = document.querySelectorAll('.tab-content');
+
     // Scanner
     const scanInput = document.getElementById('scan-input');
     const bayAssignSelect = document.getElementById('bay-assign-select');
     const executeMoveBtn = document.getElementById('execute-move-btn');
     const scannerFeedback = document.getElementById('scanner-feedback');
     const cameraScanBtn = document.getElementById('camera-scan-btn');
-    
-    // Camera Modal
     const cameraModal = document.getElementById('camera-modal');
     const closeCameraBtn = document.getElementById('close-camera-btn');
     let html5QrCodeScanner = null;
 
-    // Drawer
-    const detailsDrawer = document.getElementById('details-drawer');
-    const drawerTitle = document.getElementById('drawer-title');
-    const drawerSubtitle = document.getElementById('drawer-subtitle');
-    const drawerBody = document.getElementById('drawer-body');
-    const closeDrawerBtn = document.getElementById('close-drawer-btn');
-    const drawerSearchInput = document.getElementById('drawer-search-input');
+    // AI Suggestions Panel
+    const aiSuggestionPanel = document.getElementById('ai-suggestion-panel');
+    const aiSuggestionReason = document.getElementById('ai-suggestion-reason');
+    const suggestedPutawayBay = document.getElementById('suggested-putaway-bay');
+    const anomaliesList = document.getElementById('anomalies-list');
 
-    // Quick Move Dialog
+    // AI Insights
+    const generateInsightsBtn = document.getElementById('generate-insights-btn');
+    const aiInsightsContent = document.getElementById('ai-insights-content');
+
+    // Bay Stock Grid & Dialogs
+    const baysGrid = document.getElementById('bays-grid');
     const moveDialog = document.getElementById('move-dialog');
     const dialogRollId = document.getElementById('dialog-roll-id');
     const dialogBaySelect = document.getElementById('dialog-bay-select');
@@ -124,189 +143,466 @@ document.addEventListener('DOMContentLoaded', function () {
     const closeDialogBtn = document.getElementById('close-dialog-btn');
     let activeMovingRoll = null;
 
-    // --- CORE LOGIC & API CONNECTIVITY ---
-    
-    // Check if running inside Frappe environment
+    // Drilldown Drawer
+    const detailsDrawer = document.getElementById('details-drawer');
+    const drawerTitle = document.getElementById('drawer-title');
+    const drawerSubtitle = document.getElementById('drawer-subtitle');
+    const drawerBody = document.getElementById('drawer-body');
+    const closeDrawerBtn = document.getElementById('close-drawer-btn');
+    const drawerSearchInput = document.getElementById('drawer-search-input');
+    const exportDrawerExcelBtn = document.getElementById('export-drawer-excel-btn');
+    const exportDrawerPdfBtn = document.getElementById('export-drawer-pdf-btn');
+
+    // Inventory Tab Elements
+    const inventorySearch = document.getElementById('inventory-search');
+    const filterCompany = document.getElementById('filter-company');
+    const filterUnit = document.getElementById('filter-unit');
+    const filterBay = document.getElementById('filter-bay');
+    const filterStatus = document.getElementById('filter-status');
+    const inventoryListTbody = document.getElementById('inventory-list-tbody');
+    const exportAllExcelBtn = document.getElementById('export-all-excel-btn');
+    const exportAllPdfBtn = document.getElementById('export-all-pdf-btn');
+    const movementsLogTbody = document.getElementById('movements-log-tbody');
+
+    // AI Chat Widget
+    const aiChatToggle = document.getElementById('ai-chat-toggle');
+    const aiChatBox = document.getElementById('ai-chat-box');
+    const closeChatBtn = document.getElementById('close-chat-btn');
+    const chatMessages = document.getElementById('chat-messages');
+    const chatQueryInput = document.getElementById('chat-query-input');
+    const sendChatBtn = document.getElementById('send-chat-btn');
+
+    // --- CONNECTION CHECK & APP INITIALIZATION ---
     function checkFrappeConnection() {
-        // Standard Frappe exposes 'frappe' object globally
         if (typeof frappe !== 'undefined') {
             appState.isDemoMode = false;
-            demoModeBadge.classList.remove('demo-active');
-            demoModeBadge.classList.add('live-active');
-            demoModeBadge.innerHTML = '<span class="pulse-dot"></span><span>Live Connected</span>';
+            demoModeBadge.className = 'mode-badge live-active';
+            demoModeBadge.querySelector('.badge-text').textContent = 'Live Connected';
             
-            // Connect to Realtime WebSockets
             if (frappe.realtime) {
                 frappe.realtime.on('wms_bay_update', function(data) {
-                    showToast(`Roll ${data.batch_no} moved to ${data.new_bay} by ${data.user}`, 'success');
+                    showToast(`WebSocket: Roll ${data.batch_no} moved to ${data.new_bay}`, 'success');
                     fetchData();
                 });
             }
         } else {
             appState.isDemoMode = true;
-            demoModeBadge.classList.add('demo-active');
-            demoModeBadge.classList.remove('live-active');
-            demoModeBadge.innerHTML = '<span class="pulse-dot"></span><span>Demo Mode (Interactive)</span>';
+            demoModeBadge.className = 'mode-badge demo-active';
+            demoModeBadge.querySelector('.badge-text').textContent = 'Demo Mode (Interactive)';
         }
     }
-    checkFrappeConnection();
 
-    // Fetch summaries from API or Demo Database
+    // Tab Navigation switching
+    navItems.forEach(item => {
+        item.addEventListener('click', () => {
+            const targetTab = item.getAttribute('data-tab');
+            appState.activeTab = targetTab;
+            
+            // Toggle active classes on buttons
+            navItems.forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+
+            // Toggle active classes on sections
+            tabContents.forEach(content => {
+                content.classList.remove('active');
+                if (content.id === `${targetTab}-view`) {
+                    content.classList.add('active');
+                }
+            });
+
+            // Update Titles
+            if (targetTab === 'dashboard') {
+                pageTitle.textContent = 'Warehouse Overview';
+                pageSubtitle.textContent = 'Live inventory distribution & analytics';
+            } else if (targetTab === 'scanner') {
+                pageTitle.textContent = 'Barcode Scanner Console';
+                pageSubtitle.textContent = 'Wedge scan or input roll batches';
+            } else if (targetTab === 'bay-stock') {
+                pageTitle.textContent = 'Bay Stock Manager';
+                pageSubtitle.textContent = 'Interactive layout configuration';
+            } else if (targetTab === 'inventory') {
+                pageTitle.textContent = 'Inventory Records';
+                pageSubtitle.textContent = 'Consolidated stock ledger and auditing';
+            }
+        });
+    });
+
+    // --- CORE DATA FETCHING ---
     async function fetchData() {
         if (appState.isDemoMode) {
-            loadDemoData();
+            appState.batches = [...appState.mockDatabase];
+            processData();
             return;
         }
 
         try {
-            const response = await fetch('/api/method/warehouse_management.api.stock_api.get_bay_summary');
+            // Fetch ALL batches directly from ERPNext API resource
+            const response = await fetch('/api/resource/Batch?fields=["*"]&limit_page_length=999999');
             const result = await response.json();
             
-            if (result.message && result.message.status === 'success') {
-                appState.bays = result.message.data;
-                renderBaysSummary();
+            if (result.data) {
+                appState.batches = result.data.map(b => ({
+                    ...b,
+                    // Map generic fields if custom fields aren't initialized yet
+                    custom_bay: b.custom_bay || b.bay || 'UNASSIGNED',
+                    custom_order_code: b.custom_order_code || b.order_code || 'UNASSIGNED',
+                    batch_qty: parseFloat(b.batch_qty || b.qty || 0)
+                }));
+                processData();
             } else {
-                throw new Error(result.message ? result.message.message : 'API failed');
+                throw new Error('No data returned from ERPNext');
             }
         } catch (error) {
             console.warn("API Error, falling back to Demo Mode: ", error.message);
             appState.isDemoMode = true;
-            demoModeBadge.classList.add('demo-active');
-            demoModeBadge.innerHTML = '<span class="pulse-dot"></span><span>Demo Mode (Fallback)</span>';
-            loadDemoData();
+            demoModeBadge.className = 'mode-badge demo-active';
+            demoModeBadge.querySelector('.badge-text').textContent = 'Demo Mode (Fallback)';
+            appState.batches = [...appState.mockDatabase];
+            processData();
         }
     }
 
-    // Load Demo data
-    function loadDemoData() {
-        const unitStock = appState.mockDatabase[appState.activeUnit] || [];
+    // Process & Aggregate raw batches into UI values
+    function processData() {
+        const selectedUnitVal = unitSelect.value;
         
-        // Defined Bays (including UNASSIGNED)
-        const bayNames = ["B1", "B2", "OUTSIDE", "B3", "B4", "UNASSIGNED"];
-        const summary = bayNames.map(bayName => {
-            const rollsInBay = unitStock.filter(r => r.custom_bay === bayName);
-            const totalWeight = rollsInBay.reduce((sum, r) => sum + r.qty, 0);
+        // Filter batches by Unit selection
+        let filtered = appState.batches;
+        if (selectedUnitVal !== 'All') {
+            filtered = appState.batches.filter(b => {
+                const details = parseBatchDetails(b.name);
+                const bay = b.custom_bay || 'UNASSIGNED';
+                
+                // Determine unit mapping based on batch prefix or bay code
+                let itemUnit = details.unit;
+                if (bay.startsWith('B') && !isNaN(bay.charAt(1))) itemUnit = 1;
+                else if (bay.startsWith('A') && !isNaN(bay.charAt(1))) itemUnit = 2;
+                else if (bay.startsWith('C') && !isNaN(bay.charAt(1))) itemUnit = 3;
+                else if (bay.startsWith('D') && !isNaN(bay.charAt(1))) itemUnit = 4;
+                
+                const targetUnit = selectedUnitVal === 'unit_1' ? 1 : selectedUnitVal === 'unit_2' ? 2 : selectedUnitVal === 'unit_3' ? 3 : 4;
+                return itemUnit === targetUnit;
+            });
+        }
+
+        // 1. Compute Stats
+        const activeBatches = filtered.filter(b => (b.batch_qty || b.qty || 0) > 0);
+        const totalWeight = activeBatches.reduce((sum, b) => sum + (b.batch_qty || b.qty || 0), 0);
+        const lowStockCount = activeBatches.filter(b => (b.batch_qty || b.qty || 0) < 10).length;
+        
+        let expiringCount = 0;
+        const now = new Date();
+        activeBatches.forEach(b => {
+            if (b.expiry_date) {
+                const expiry = new Date(b.expiry_date);
+                const diffTime = Math.abs(expiry.getTime() - now.getTime());
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (diffDays <= 30 && expiry > now) expiringCount++;
+            }
+        });
+
+        totalWeightEl.textContent = `${totalWeight.toFixed(2)} KGs`;
+        totalLowStockEl.textContent = lowStockCount;
+        totalExpiringEl.textContent = expiringCount;
+
+        // 2. Aggregate Bay Data
+        const bayNames = ["B1", "B2", "B3", "B4", "OUTSIDE", "UNASSIGNED"];
+        appState.bays = bayNames.map(bayName => {
+            const rollsInBay = filtered.filter(r => (r.custom_bay || 'UNASSIGNED') === bayName);
+            const weight = rollsInBay.reduce((sum, r) => sum + (r.batch_qty || r.qty || 0), 0);
             return {
                 bay_no: bayName,
                 no_of_rolls: rollsInBay.length,
-                kgs: Number(totalWeight.toFixed(2))
+                kgs: Number(weight.toFixed(2))
             };
         });
 
-        appState.bays = summary;
-        renderBaysSummary();
+        // Render sections
+        renderBaysGrid();
+        renderInventoryList(filtered);
+        renderCharts(filtered);
     }
 
-    // Render Summary Cards (View 1)
-    function renderBaysSummary() {
+    // --- INVENTORY VIEW RENDERING & FILTERING ---
+    function renderInventoryList(batchesToRender) {
+        inventoryListTbody.innerHTML = '';
+        if (batchesToRender.length === 0) {
+            inventoryListTbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">No rolls matched the selected filters.</td></tr>`;
+            return;
+        }
+
+        batchesToRender.forEach(b => {
+            const status = getBatchStatus(b);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${b.name}</strong></td>
+                <td>${b.item}</td>
+                <td>${b.custom_order_code || 'UNASSIGNED'}</td>
+                <td>${(b.batch_qty || b.qty || 0).toFixed(2)}</td>
+                <td><span class="val-badge">${b.custom_bay || 'UNASSIGNED'}</span></td>
+                <td>${b.expiry_date || 'None'}</td>
+                <td><span class="${status.class}">${status.label}</span></td>
+            `;
+            inventoryListTbody.appendChild(tr);
+        });
+    }
+
+    // Setup filter event listeners for Inventory Tab
+    function applyInventoryFilters() {
+        const query = inventorySearch.value.toLowerCase();
+        const company = filterCompany.value;
+        const unit = filterUnit.value;
+        const bay = filterBay.value;
+        const status = filterStatus.value;
+
+        const filtered = appState.batches.filter(b => {
+            const details = parseBatchDetails(b.name);
+            const bayName = b.custom_bay || 'UNASSIGNED';
+            
+            // Search Query
+            const matchesSearch = b.name.toLowerCase().includes(query) || 
+                                  (b.custom_order_code || '').toLowerCase().includes(query) ||
+                                  (b.item_name || b.item).toLowerCase().includes(query);
+            
+            // Company Filter
+            const matchesCompany = company === 'All' || details.company === company;
+
+            // Unit Filter
+            let targetUnit = details.unit;
+            if (bayName.startsWith('B') && !isNaN(bayName.charAt(1))) targetUnit = 1;
+            else if (bayName.startsWith('A') && !isNaN(bayName.charAt(1))) targetUnit = 2;
+            else if (bayName.startsWith('C') && !isNaN(bayName.charAt(1))) targetUnit = 3;
+            else if (bayName.startsWith('D') && !isNaN(bayName.charAt(1))) targetUnit = 4;
+            const matchesUnit = unit === 'All' || `Unit ${targetUnit}` === unit;
+
+            // Bay Filter
+            const matchesBay = bay === 'All' || bayName === bay;
+
+            // Status Filter
+            const matchesStatus = status === 'All' || getBatchStatus(b).label === status;
+
+            return matchesSearch && matchesCompany && matchesUnit && matchesBay && matchesStatus;
+        });
+
+        renderInventoryList(filtered);
+    }
+
+    [inventorySearch, filterCompany, filterUnit, filterBay, filterStatus].forEach(el => {
+        el.addEventListener('input', applyInventoryFilters);
+        el.addEventListener('change', applyInventoryFilters);
+    });
+
+    // --- CHART.JS ANALYTICS ---
+    function renderCharts(batchesData) {
+        const itemMap = {};
+        const companyMap = {};
+
+        batchesData.forEach(b => {
+            const qty = b.batch_qty || b.qty || 0;
+            if (qty <= 0) return;
+
+            const name = b.item_name || b.item;
+            itemMap[name] = (itemMap[name] || 0) + qty;
+
+            const details = parseBatchDetails(b.name);
+            const comp = details.parsed ? details.company : 'Unknown';
+            companyMap[comp] = (companyMap[comp] || 0) + qty;
+        });
+
+        // 1. Top Items Chart
+        const itemLabels = Object.keys(itemMap).sort((a,b) => itemMap[b] - itemMap[a]).slice(0, 5);
+        const itemValues = itemLabels.map(label => itemMap[label]);
+
+        if (appState.charts.items) appState.charts.items.destroy();
+        const ctxItems = document.getElementById('itemsChart').getContext('2d');
+        appState.charts.items = new Chart(ctxItems, {
+            type: 'bar',
+            data: {
+                labels: itemLabels,
+                datasets: [{
+                    label: 'Weight (KGs)',
+                    data: itemValues,
+                    backgroundColor: 'rgba(59, 130, 246, 0.75)', // Blue 500
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 1.5,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+
+        // 2. Stock by Company Chart
+        const compLabels = Object.keys(companyMap);
+        const compValues = compLabels.map(label => companyMap[label]);
+
+        if (appState.charts.company) appState.charts.company.destroy();
+        const ctxCompany = document.getElementById('companyChart').getContext('2d');
+        appState.charts.company = new Chart(ctxCompany, {
+            type: 'doughnut',
+            data: {
+                labels: compLabels,
+                datasets: [{
+                    data: compValues,
+                    backgroundColor: [
+                        'rgba(59, 130, 246, 0.8)',  // Blue
+                        'rgba(16, 185, 129, 0.8)', // Emerald
+                        'rgba(245, 158, 11, 0.8)',  // Amber
+                        'rgba(239, 68, 68, 0.8)'    // Red
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+    }
+
+    // --- AI INSIGHTS GENERATION ---
+    generateInsightsBtn.addEventListener('click', async () => {
+        aiInsightsContent.textContent = 'Analyzing stock ledger and gathering insights...';
+        aiInsightsContent.className = 'ai-insights-body';
+
+        const totalActiveWeight = appState.batches.reduce((sum, b) => sum + (b.batch_qty || b.qty || 0), 0);
+        const expiredCount = appState.batches.filter(b => {
+            if (!b.expiry_date) return false;
+            return new Date(b.expiry_date) < new Date();
+        }).length;
+        
+        // Formulate a structured prompt for the AI Chat handler to trigger insights
+        const analysisPrompt = `WMS GENERAL INSIGHTS REPORT. Total Stock Weight: ${totalActiveWeight.toFixed(2)} KGs. Low Stock Count: ${totalLowStockEl.textContent}. Expired count: ${expiredCount}. Please provide a 3-point actionable inventory report summary.`;
+
+        if (appState.isDemoMode) {
+            setTimeout(() => {
+                aiInsightsContent.innerHTML = `
+                    <ul>
+                        <li><strong>⚠️ Stock Distribution Alert</strong>: 100% of the active Spun Bond rolls are located in the OUTSIDE staging zone. Consider relocating them to rack bays B1/B2 to optimize floor space.</li>
+                        <li><strong>💡 Picking Recommendation</strong>: Batches JS-0306261/1, JS-0306261/2, and JS-0306261/3 are expiring within 12 months. Prioritize these for immediate dispatch to customers (FEFO).</li>
+                        <li><strong>📋 Low Stock Warning</strong>: No active stocks are recorded in Unit 1. Verify if transfer requests from Unit 3 are required.</li>
+                    </ul>
+                `;
+            }, 800);
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/method/warehouse_management.api.ai_api.process_chat_query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ user_query: analysisPrompt })
+            });
+            const result = await response.json();
+            if (result.message && result.message.status === 'success') {
+                // Parse markdown list formatting
+                const formattedHtml = result.message.reply
+                    .replace(/\n/g, '<br/>')
+                    .replace(/\* \*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                aiInsightsContent.innerHTML = formattedHtml;
+            } else {
+                throw new Error('Failed to generate insights');
+            }
+        } catch (error) {
+            aiInsightsContent.textContent = 'Error: ' + error.message;
+            aiInsightsContent.className = 'ai-insights-body empty';
+        }
+    });
+
+    // --- BAY STOCK GRID ---
+    function renderBaysGrid() {
         baysGrid.innerHTML = '';
-        let grandTotalRolls = 0;
-        let grandTotalWeight = 0;
-
         appState.bays.forEach(bay => {
-            grandTotalRolls += bay.no_of_rolls;
-            grandTotalWeight += bay.kgs;
-
             const isOutside = bay.bay_no.toUpperCase() === 'OUTSIDE';
             const isUnassigned = bay.bay_no.toUpperCase() === 'UNASSIGNED';
+            
             const card = document.createElement('div');
             card.className = `bay-card ${isOutside ? 'outside' : isUnassigned ? 'unassigned' : 'bay-active'} ${bay.no_of_rolls === 0 ? 'empty-bay' : ''}`;
-            card.id = `bay-card-${bay.bay_no}`;
-            
             card.innerHTML = `
                 <div class="bay-card-header">
-                    <div class="bay-number">${isUnassigned ? 'UNASSIGNED' : bay.bay_no}</div>
+                    <div class="bay-number">${bay.bay_no}</div>
                     <span class="bay-type-badge">${isOutside ? 'Holding Zone' : isUnassigned ? 'New Arrivals' : 'Rack Bay'}</span>
                 </div>
                 <div class="bay-metrics">
                     <div class="metric-row">
                         <span class="label">No. of Rolls</span>
-                        <span class="value rolls-count">${bay.no_of_rolls}</span>
+                        <span class="value">${bay.no_of_rolls}</span>
                     </div>
                     <div class="metric-row">
                         <span class="label">Total Weight</span>
-                        <span class="value weight-kgs">${bay.kgs.toFixed(2)} KGs</span>
+                        <span class="value">${bay.kgs.toFixed(2)} KGs</span>
                     </div>
                 </div>
             `;
 
-            // Open drilldown on click
             card.addEventListener('click', () => {
                 openBayDetails(bay.bay_no);
             });
-
             baysGrid.appendChild(card);
         });
-
-        // Update totals bar
-        totalBaysEl.textContent = appState.bays.filter(b => b.no_of_rolls > 0).length;
-        totalRollsEl.textContent = grandTotalRolls;
-        totalWeightEl.textContent = `${grandTotalWeight.toFixed(2)} KGs`;
     }
 
-    // Open Drawer (View 2)
+    // --- DRILLDOWN DRAWER ---
     async function openBayDetails(bayName) {
         appState.selectedBayName = bayName;
         drawerTitle.textContent = `${bayName} details`;
         drawerSubtitle.textContent = `Physical Bay Stock`;
-        
         detailsDrawer.classList.remove('hidden');
         drawerBody.innerHTML = '<div class="loading-state">Loading rolls...</div>';
 
         if (appState.isDemoMode) {
             setTimeout(() => {
                 loadDemoDetails(bayName);
-            }, 200); // Simulate API latency
+            }, 200);
         } else {
             try {
                 const response = await fetch(`/api/method/warehouse_management.api.stock_api.get_bay_details?bay_name=${encodeURIComponent(bayName)}`);
                 const result = await response.json();
-                
                 if (result.message && result.message.status === 'success') {
                     appState.currentBayDetails = result.message.data;
                     renderDrawerDetails();
                 } else {
-                    throw new Error(result.message ? result.message.message : 'API failed');
+                    throw new Error('API failed');
                 }
             } catch (error) {
-                showToast("Failed to load details: " + error.message, 'error');
+                showToast("Failed to load bay details: " + error.message, 'error');
             }
         }
     }
 
-    // Load Demo Details
     function loadDemoDetails(bayName) {
-        const unitStock = appState.mockDatabase[appState.activeUnit] || [];
-        const rollsInBay = unitStock.filter(r => r.custom_bay === bayName);
-        
-        // Group by custom_order_code
+        const rollsInBay = appState.batches.filter(r => (r.custom_bay || 'UNASSIGNED') === bayName);
         const grouped = {};
         rollsInBay.forEach(roll => {
             const orderCode = roll.custom_order_code || "UNASSIGNED";
-            if (!grouped[orderCode]) {
-                grouped[orderCode] = [];
-            }
+            if (!grouped[orderCode]) grouped[orderCode] = [];
             grouped[orderCode].push(roll);
         });
 
-        // Convert to list format
-        const result = Object.keys(grouped).map(orderCode => {
+        appState.currentBayDetails = Object.keys(grouped).map(orderCode => {
             const rolls = grouped[orderCode];
-            const rollsCount = rolls.length;
-            const totalKgs = rolls.reduce((sum, r) => sum + r.qty, 0);
             return {
                 order_code: orderCode,
-                rolls_count: rollsCount,
-                total_kgs: Number(totalKgs.toFixed(2)),
+                rolls_count: rolls.length,
+                total_kgs: rolls.reduce((sum, r) => sum + (r.batch_qty || r.qty || 0), 0),
                 rolls: rolls
             };
         });
-
-        appState.currentBayDetails = result;
         renderDrawerDetails();
     }
 
-    // Render drawer detail cards grouped by Order Code
     function renderDrawerDetails(searchTerm = '') {
         if (!appState.currentBayDetails || appState.currentBayDetails.length === 0) {
             drawerBody.innerHTML = '<div class="loading-state">No rolls currently in this bay.</div>';
@@ -314,24 +610,18 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         drawerBody.innerHTML = '';
-        let matchFound = false;
-
         appState.currentBayDetails.forEach(group => {
-            // Filter rolls in this order group
             const filteredRolls = group.rolls.filter(roll => {
                 const searchLower = searchTerm.toLowerCase();
-                return roll.batch_no.toLowerCase().includes(searchLower) ||
+                return roll.name.toLowerCase().includes(searchLower) ||
                        group.order_code.toLowerCase().includes(searchLower);
             });
 
             if (filteredRolls.length === 0) return;
-            matchFound = true;
-
-            const groupTotalWeight = filteredRolls.reduce((sum, r) => sum + r.qty, 0);
+            const groupTotalWeight = filteredRolls.reduce((sum, r) => sum + (r.batch_qty || r.qty || 0), 0);
 
             const groupEl = document.createElement('div');
             groupEl.className = 'order-group';
-            
             groupEl.innerHTML = `
                 <div class="order-group-header">
                     <span class="order-code-title">${group.order_code}</span>
@@ -344,187 +634,41 @@ document.addEventListener('DOMContentLoaded', function () {
             `;
 
             const listContainer = groupEl.querySelector('.order-rolls-list');
-            
             filteredRolls.forEach(roll => {
                 const rollEl = document.createElement('div');
                 rollEl.className = 'roll-card';
                 rollEl.innerHTML = `
                     <div class="roll-details">
-                        <span class="roll-id">${roll.batch_no}</span>
-                        <span class="roll-dates">MFG: ${roll.manufacturing_date}</span>
+                        <span class="roll-id">${roll.name}</span>
+                        <span class="roll-dates">MFG: ${roll.manufacturing_date || 'N/A'}</span>
                     </div>
                     <div class="roll-stats">
-                        <span class="roll-weight">${roll.qty.toFixed(2)} KGs</span>
-                        <button class="btn-action-small move-roll-btn" data-roll="${roll.batch_no}">Move</button>
+                        <span class="roll-weight">${(roll.batch_qty || roll.qty || 0).toFixed(2)} KGs</span>
+                        <button class="btn-action-small move-roll-btn" data-roll="${roll.name}">Move</button>
                     </div>
                 `;
 
-                // Add move button listener
                 rollEl.querySelector('.move-roll-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
-                    openMoveDialog(roll.batch_no);
+                    openMoveDialog(roll.name);
                 });
-
                 listContainer.appendChild(rollEl);
             });
 
             drawerBody.appendChild(groupEl);
         });
-
-        if (!matchFound) {
-            drawerBody.innerHTML = '<div class="loading-state">No matching rolls found.</div>';
-        }
     }
 
-    // Trigger physical bay reassignments
-    async function moveRoll(batchNo, newBay) {
-        if (appState.isDemoMode) {
-            // Local update
-            const unitStock = appState.mockDatabase[appState.activeUnit] || [];
-            const roll = unitStock.find(r => r.batch_no === batchNo);
-            
-            if (roll) {
-                const oldBay = roll.custom_bay || 'UNASSIGNED';
-                roll.custom_bay = newBay;
-                showToast(`Roll ${batchNo} moved successfully from ${oldBay} to ${newBay}!`, 'success');
-                
-                // Add log entry
-                addMovementLog(batchNo, oldBay, newBay, roll.qty);
-                
-                // Refresh views
-                loadDemoData();
-                if (detailsDrawer.classList.contains('hidden') === false) {
-                    loadDemoDetails(appState.selectedBayName);
-                }
-            } else {
-                showToast(`Roll ${batchNo} not found in database.`, 'error');
-            }
-            return;
-        }
-
-        // Live Mode API request
-        try {
-            executeMoveBtn.disabled = true;
-            executeMoveBtn.textContent = 'Moving...';
-            
-            // Capture old bay for logging before update
-            let oldBayVal = 'UNASSIGNED';
-            if (appState.currentBayDetails) {
-                const group = appState.currentBayDetails.find(g => g.rolls.some(r => r.batch_no === batchNo));
-                if (group) oldBayVal = appState.selectedBayName || 'UNASSIGNED';
-            }
-            
-            const response = await fetch('/api/method/warehouse_management.api.stock_api.update_batch_bay', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    batch_no: batchNo,
-                    new_bay: newBay
-                })
-            });
-            const result = await response.json();
-            
-            if (result.message && result.message.status === 'success') {
-                showToast(result.message.message, 'success');
-                
-                // Find roll quantity for logging
-                let qtyVal = 44.15;
-                if (appState.currentBayDetails) {
-                    const group = appState.currentBayDetails.find(g => g.rolls.some(r => r.batch_no === batchNo));
-                    if (group) {
-                        const rObj = group.rolls.find(r => r.batch_no === batchNo);
-                        if (rObj) qtyVal = rObj.kgs || rObj.qty || 44.15;
-                    }
-                }
-                addMovementLog(batchNo, oldBayVal, newBay, qtyVal);
-                
-                fetchData();
-                if (detailsDrawer.classList.contains('hidden') === false) {
-                    openBayDetails(appState.selectedBayName);
-                }
-            } else {
-                throw new Error(result.message ? result.message.message : 'Movement failed');
-            }
-        } catch (error) {
-            showToast("Failed to move roll: " + error.message, 'error');
-        } finally {
-            executeMoveBtn.disabled = false;
-            executeMoveBtn.textContent = 'Reassign Bay';
-        }
-    }
-
-    // --- INTERACTIVE EVENTS & INPUTS ---
-
-    // Top Right Unit Selector
-    unitSelect.addEventListener('change', (e) => {
-        appState.activeUnit = e.target.value;
-        showToast(`Switched to Unit ${e.target.value.replace('unit_', '')}`, 'success');
-        fetchData();
-        closeDrawer();
-    });
-
-    // Sync button
-    refreshBtn.addEventListener('click', () => {
-        showToast("Synchronizing with ERPNext Stock...", "success");
-        fetchData();
-    });
-
-    // Scanner / Wedge execute button
-    executeMoveBtn.addEventListener('click', () => {
-        const batchNo = scanInput.value.trim();
-        const destBay = bayAssignSelect.value;
-
-        if (!batchNo) {
-            showScannerFeedback("Please enter a Roll Batch Number.", 'error');
-            return;
-        }
-
-        moveRoll(batchNo, destBay);
-        scanInput.value = ''; // clear field for next wedge scan
-        scanInput.focus();
-    });
-
-    // Handle Keyboard Wedge scanning (Sends carriage return/Enter key)
-    scanInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            executeMoveBtn.click();
-        }
-    });
-
-    // Show scanner console inline error feedback
-    function showScannerFeedback(msg, type) {
-        scannerFeedback.textContent = msg;
-        scannerFeedback.className = `feedback-message ${type}`;
-        scannerFeedback.classList.remove('hidden');
-        
-        setTimeout(() => {
-            scannerFeedback.classList.add('hidden');
-        }, 4000);
-    }
-
-    // --- DRAWER ACTIONS ---
-    closeDrawerBtn.addEventListener('click', closeDrawer);
-    
-    function closeDrawer() {
-        detailsDrawer.classList.add('hidden');
-    }
-
-    // Search drawer roll records
     drawerSearchInput.addEventListener('input', (e) => {
         renderDrawerDetails(e.target.value);
     });
 
-    // --- QUICK MOVE DIALOG ---
+    // --- QUICK MOVE REASSIGNMENT ---
     function openMoveDialog(batchNo) {
         activeMovingRoll = batchNo;
         dialogRollId.textContent = batchNo;
-        
-        // Populate options in dialog dropdown, omitting selected bay
         dialogBaySelect.innerHTML = '';
+        
         const bayNames = ["UNASSIGNED", "B1", "B2", "B3", "B4", "OUTSIDE"];
         bayNames.forEach(bay => {
             if (bay !== appState.selectedBayName) {
@@ -534,13 +678,50 @@ document.addEventListener('DOMContentLoaded', function () {
                 dialogBaySelect.appendChild(opt);
             }
         });
-
         moveDialog.classList.remove('hidden');
     }
 
-    closeDialogBtn.addEventListener('click', () => {
-        moveDialog.classList.add('hidden');
-    });
+    async function moveRoll(batchNo, newBay) {
+        const oldBay = appState.batches.find(r => r.name === batchNo)?.custom_bay || 'UNASSIGNED';
+        const weight = appState.batches.find(r => r.name === batchNo)?.batch_qty || 0;
+
+        if (appState.isDemoMode) {
+            const roll = appState.mockDatabase.find(r => r.name === batchNo);
+            if (roll) {
+                roll.custom_bay = newBay;
+                showToast(`Roll ${batchNo} moved successfully to ${newBay}!`, 'success');
+                addMovementLog(batchNo, oldBay, newBay, roll.qty);
+                processData();
+                if (!detailsDrawer.classList.contains('hidden')) loadDemoDetails(appState.selectedBayName);
+            }
+            return;
+        }
+
+        try {
+            executeMoveBtn.disabled = true;
+            executeMoveBtn.textContent = 'Moving...';
+            
+            const response = await fetch('/api/method/warehouse_management.api.stock_api.update_batch_bay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ batch_no: batchNo, new_bay: newBay })
+            });
+            const result = await response.json();
+            if (result.message && result.message.status === 'success') {
+                showToast(result.message.message, 'success');
+                addMovementLog(batchNo, oldBay, newBay, weight);
+                fetchData();
+                if (!detailsDrawer.classList.contains('hidden')) openBayDetails(appState.selectedBayName);
+            } else {
+                throw new Error(result.message ? result.message.message : 'API failure');
+            }
+        } catch (error) {
+            showToast("Failed to reassign: " + error.message, 'error');
+        } finally {
+            executeMoveBtn.disabled = false;
+            executeMoveBtn.textContent = 'Reassign Bay';
+        }
+    }
 
     dialogConfirmBtn.addEventListener('click', () => {
         const targetBay = dialogBaySelect.value;
@@ -550,125 +731,52 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // --- CAMERA BARCODE SCANNING (Using html5-qrcode) ---
-    cameraScanBtn.addEventListener('click', () => {
-        cameraModal.classList.remove('hidden');
-        
-        // Start scanner camera
-        html5QrCodeScanner = new Html5QrcodeScanner(
-            "reader", 
-            { fps: 15, qrbox: { width: 250, height: 150 } },
-            /* verbose= */ false
-        );
-        
-        html5QrCodeScanner.render(onScanSuccess, onScanFailure);
+    closeDialogBtn.addEventListener('click', () => moveDialog.classList.add('hidden'));
+    closeDrawerBtn.addEventListener('click', () => detailsDrawer.classList.add('hidden'));
+
+    // --- SCANNER TABS & CAMERA INTERFACE ---
+    executeMoveBtn.addEventListener('click', () => {
+        const batchNo = scanInput.value.trim();
+        const destBay = bayAssignSelect.value;
+        if (!batchNo) {
+            showScannerFeedback("Please enter a Roll Batch Number.", 'error');
+            return;
+        }
+        moveRoll(batchNo, destBay);
+        scanInput.value = '';
+        scanInput.focus();
     });
 
-    function onScanSuccess(decodedText, decodedResult) {
-        // Stop scanning
-        html5QrCodeScanner.clear().then(() => {
-            cameraModal.classList.add('hidden');
-            
-            // Pop scan value to field
-            scanInput.value = decodedText;
-            showToast(`Scanned: ${decodedText}`, 'success');
-            
-            // Focus destination field
-            bayAssignSelect.focus();
-        }).catch(err => {
-            console.error("Scanner clear error", err);
-        });
-    }
-
-    function onScanFailure(error) {
-        // Silently scan for QR or barcodes
-    }
-
-    closeCameraBtn.addEventListener('click', () => {
-        if (html5QrCodeScanner) {
-            html5QrCodeScanner.clear().then(() => {
-                cameraModal.classList.add('hidden');
-            }).catch(() => {
-                cameraModal.classList.add('hidden');
-            });
-        } else {
-            cameraModal.classList.add('hidden');
+    scanInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            executeMoveBtn.click();
         }
     });
 
-    // --- TOAST NOTIFICATIONS ---
-    function showToast(message, type = 'success') {
-        const container = document.getElementById('toast-container');
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        
-        const icon = type === 'success' ? '✓' : '✗';
-        toast.innerHTML = `<span class="toast-icon">${icon}</span> <span>${message}</span>`;
-        
-        container.appendChild(toast);
-        
-        // Remove toast after animation finishes
-        setTimeout(() => {
-            toast.style.animation = 'slideUp 0.3s ease reverse forwards';
-            setTimeout(() => {
-                toast.remove();
-            }, 300);
-        }, 3500);
+    function showScannerFeedback(msg, type) {
+        scannerFeedback.textContent = msg;
+        scannerFeedback.className = `feedback-message ${type}`;
+        scannerFeedback.classList.remove('hidden');
+        setTimeout(() => scannerFeedback.classList.add('hidden'), 4000);
     }
 
-    // --- WMS AI & SUGGESTIONS LOGIC ---
-
-    const aiSuggestionPanel = document.getElementById('ai-suggestion-panel');
-    const aiSuggestionReason = document.getElementById('ai-suggestion-reason');
-    const suggestedPutawayBay = document.getElementById('suggested-putaway-bay');
-    const anomaliesList = document.getElementById('anomalies-list');
-
-    // Trigger AI suggestion lookup on input change / wedge scan focus
+    // AI suggestion routing debounce
     scanInput.addEventListener('input', debounce(function (e) {
         const batchNo = e.target.value.trim();
-        if (batchNo.length >= 3) {
-            getAISuggestions(batchNo);
-        } else {
-            aiSuggestionPanel.classList.add('hidden');
-        }
+        if (batchNo.length >= 3) getAISuggestions(batchNo);
+        else aiSuggestionPanel.classList.add('hidden');
     }, 300));
-
-    function debounce(func, wait) {
-        let timeout;
-        return function () {
-            const context = this, args = arguments;
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(context, args), wait);
-        };
-    }
 
     async function getAISuggestions(batchNo) {
         if (appState.isDemoMode) {
-            // Mock AI putaway strategy logic
             aiSuggestionPanel.classList.remove('hidden');
+            suggestedPutawayBay.textContent = batchNo.includes('/23') || batchNo.includes('/24') ? 'UNASSIGNED' : 'OUTSIDE';
+            aiSuggestionReason.textContent = "Order Consolidation: Consolidated sibling rolls of same batch series.";
             
-            // Suggest OUTSIDE for standard rolls, or B2/B1
-            if (batchNo.includes('/23') || batchNo.includes('/24')) {
-                suggestedPutawayBay.textContent = 'UNASSIGNED';
-                aiSuggestionReason.textContent = "New Arrivals Staging: Staging roll until storage space is assigned.";
-            } else {
-                suggestedPutawayBay.textContent = 'OUTSIDE';
-                aiSuggestionReason.textContent = "Order Consolidation: Sibling rolls of order 'ORD-2026-9901' are in OUTSIDE.";
-            }
-            
-            // Check for mock anomalies
             anomaliesList.innerHTML = '';
             if (batchNo.endsWith('/99')) {
-                const alertEl = document.createElement('div');
-                alertEl.className = 'anomaly-alert';
-                alertEl.innerHTML = `<span>⚠️</span> <span><strong>Zero Weight Alert:</strong> Roll has 0.0 KG stock in ERPNext ledger.</span>`;
-                anomaliesList.appendChild(alertEl);
-            }
-            if (batchNo.includes('EXP')) {
-                const alertEl = document.createElement('div');
-                alertEl.className = 'anomaly-alert';
-                alertEl.innerHTML = `<span>⚠️</span> <span><strong>Expired Batch Warning:</strong> Batch expired on 2026-06-01.</span>`;
-                anomaliesList.appendChild(alertEl);
+                anomaliesList.innerHTML = `<div class="anomaly-alert"><span>⚠️</span> <span><strong>Zero Weight Alert</strong>: Roll has 0.0 KG stock in ERPNext.</span></div>`;
             }
             return;
         }
@@ -676,7 +784,6 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             const response = await fetch(`/api/method/warehouse_management.api.ai_api.get_ai_suggestions?batch_no=${encodeURIComponent(batchNo)}&item_code=JS-SPUN-BOND`);
             const result = await response.json();
-            
             if (result.message && result.message.status === 'success') {
                 const data = result.message;
                 aiSuggestionPanel.classList.remove('hidden');
@@ -688,64 +795,126 @@ document.addEventListener('DOMContentLoaded', function () {
                     data.anomalies.forEach(anomaly => {
                         const alertEl = document.createElement('div');
                         alertEl.className = 'anomaly-alert';
-                        alertEl.innerHTML = `<span>⚠️</span> <span><strong>${anomaly.type}:</strong> ${anomaly.message}</span>`;
+                        alertEl.innerHTML = `<span>⚠️</span> <span><strong>${anomaly.type}</strong>: ${anomaly.message}</span>`;
                         anomaliesList.appendChild(alertEl);
                     });
                 }
             }
         } catch (error) {
-            console.error("AI Suggestions API failure", error);
+            console.error("AI suggestion error", error);
         }
     }
 
-    // --- AI CHAT ASSISTANT HANDLERS ---
+    // Camera Scan Trigger
+    cameraScanBtn.addEventListener('click', () => {
+        cameraModal.classList.remove('hidden');
+        html5QrCodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
+        html5QrCodeScanner.render(decodedText => {
+            html5QrCodeScanner.clear().then(() => {
+                cameraModal.classList.add('hidden');
+                scanInput.value = decodedText;
+                showToast(`Scanned: ${decodedText}`, 'success');
+                getAISuggestions(decodedText);
+                bayAssignSelect.focus();
+            });
+        }, () => {});
+    });
 
-    const aiChatToggle = document.getElementById('ai-chat-toggle');
-    const aiChatBox = document.getElementById('ai-chat-box');
-    const closeChatBtn = document.getElementById('close-chat-btn');
-    const chatMessages = document.getElementById('chat-messages');
-    const chatQueryInput = document.getElementById('chat-query-input');
-    const sendChatBtn = document.getElementById('send-chat-btn');
+    closeCameraBtn.addEventListener('click', () => {
+        if (html5QrCodeScanner) {
+            html5QrCodeScanner.clear().then(() => cameraModal.classList.add('hidden')).catch(() => cameraModal.classList.add('hidden'));
+        } else {
+            cameraModal.classList.add('hidden');
+        }
+    });
 
+    // --- RECENT MOVEMENTS LOG & TOASTS ---
+    function addMovementLog(batchNo, src, dest, weight) {
+        const time = new Date().toLocaleTimeString();
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${time}</td>
+            <td><strong>${batchNo}</strong></td>
+            <td><span class="val-badge">${src}</span></td>
+            <td><span class="val-badge">${dest}</span></td>
+            <td>${weight.toFixed(2)}</td>
+            <td>Admin</td>
+            <td><span class="status-badge completed">Completed</span></td>
+        `;
+        
+        if (movementsLogTbody.querySelector('td[colspan]')) movementsLogTbody.innerHTML = '';
+        movementsLogTbody.insertBefore(tr, movementsLogTbody.firstChild);
+    }
+
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerHTML = `<span class="toast-icon">${type === 'success' ? '✓' : '✗'}</span> <span>${message}</span>`;
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.animation = 'slideUp 0.3s ease reverse forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
+    }
+
+    // --- EXPORT SHEET GENERATION (CSV & PDF) ---
+    function exportToCSV(dataList, filename) {
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Roll Batch ID,Item Code,Order Code,Weight (KGs),Bay Location,Expiry Date\n";
+        
+        dataList.forEach(r => {
+            csvContent += `"${r.name}","${r.item}","${r.custom_order_code || ''}",${r.batch_qty || r.qty || 0},"${r.custom_bay || 'UNASSIGNED'}","${r.expiry_date || ''}"\n`;
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    exportAllExcelBtn.addEventListener('click', () => {
+        exportToCSV(appState.batches, "WMS_Warehouse_Inventory_Stock.csv");
+        showToast("Excel Export CSV downloaded successfully", "success");
+    });
+
+    exportDrawerExcelBtn.addEventListener('click', () => {
+        const drawerRolls = [];
+        appState.currentBayDetails.forEach(g => {
+            g.rolls.forEach(r => drawerRolls.push(r));
+        });
+        exportToCSV(drawerRolls, `Bay_${appState.selectedBayName}_Inventory.csv`);
+        showToast("Drawer Inventory CSV downloaded", "success");
+    });
+
+    exportAllPdfBtn.addEventListener('click', () => window.print());
+    exportDrawerPdfBtn.addEventListener('click', () => window.print());
+
+    // --- AI CHAT ASSISTANT WIDGET ---
     aiChatToggle.addEventListener('click', () => {
         aiChatBox.classList.toggle('hidden');
-        if (!aiChatBox.classList.contains('hidden')) {
-            chatQueryInput.focus();
-        }
+        if (!aiChatBox.classList.contains('hidden')) chatQueryInput.focus();
     });
-
-    closeChatBtn.addEventListener('click', () => {
-        aiChatBox.classList.add('hidden');
-    });
-
-    // Make suggestion clicks send query automatically
-    chatMessages.addEventListener('click', (e) => {
-        if (e.target.tagName === 'LI') {
-            chatQueryInput.value = e.target.textContent.replace(/"/g, '');
-            sendChatMessage();
-        }
-    });
+    closeChatBtn.addEventListener('click', () => aiChatBox.classList.add('hidden'));
 
     sendChatBtn.addEventListener('click', sendChatMessage);
     chatQueryInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            sendChatMessage();
-        }
+        if (e.key === 'Enter') sendChatMessage();
     });
 
     async function sendChatMessage() {
         const query = chatQueryInput.value.trim();
         if (!query) return;
 
-        // Append User Message
         appendMessage(query, 'user');
         chatQueryInput.value = '';
-
-        // Typing indicator
         const typingEl = appendMessage('Typing response...', 'assistant typing');
 
         if (appState.isDemoMode) {
-            // Mock response logic
             setTimeout(() => {
                 typingEl.remove();
                 let reply = "I'm not sure how to answer that in Demo Mode. Try asking: 'What is in OUTSIDE?', 'Show near expiry rolls', or 'How many rolls in B1?'";
@@ -755,7 +924,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 } else if (qLower.includes('expiry') || qLower.includes('expired')) {
                     reply = "Near expiry rolls detected in database: JS-0306261/1, JS-0306261/2, and JS-0306261/3 are set to expire on June 01, 2027. We suggest picking these first (FEFO).";
                 } else if (qLower.includes('b1')) {
-                    reply = "Bay B1 is currently empty in Unit 3, but contains 2 rolls totaling 90.70 KGs in Unit 1.";
+                    reply = "Bay B1 contains 2 active rolls totaling 95.70 KGs in Unit 1.";
                 } else if (qLower.includes('total') || qLower.includes('how many rolls')) {
                     reply = "There are currently 24 rolls stored across all active bays in Unit 3 (22 in OUTSIDE, 2 in UNASSIGNED).";
                 }
@@ -764,23 +933,18 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // Live API call
         try {
             const response = await fetch('/api/method/warehouse_management.api.ai_api.process_chat_query', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_query: query })
             });
             const result = await response.json();
             typingEl.remove();
-            
             if (result.message && result.message.status === 'success') {
                 appendMessage(result.message.reply, 'assistant');
             } else {
-                throw new Error(result.message ? result.message.message : 'Chat query failed');
+                throw new Error('Chat failed');
             }
         } catch (error) {
             typingEl.remove();
@@ -797,374 +961,22 @@ document.addEventListener('DOMContentLoaded', function () {
         return msgEl;
     }
 
-    // --- EXPORT CENTRE & MOVEMENT LEDGER LOGIC ---
-
-    const exportAllExcelBtn = document.getElementById('export-all-excel-btn');
-    const exportAllPdfBtn = document.getElementById('export-all-pdf-btn');
-    const exportDrawerExcelBtn = document.getElementById('export-drawer-excel-btn');
-    const exportDrawerPdfBtn = document.getElementById('export-drawer-pdf-btn');
-    const movementsLogTbody = document.getElementById('movements-log-tbody');
-
-    exportAllExcelBtn.addEventListener('click', exportAllStockExcel);
-    exportAllPdfBtn.addEventListener('click', exportAllStockPDF);
-    exportDrawerExcelBtn.addEventListener('click', exportDrawerExcel);
-    exportDrawerPdfBtn.addEventListener('click', exportDrawerPDF);
-
-    function downloadCSV(csvContent, filename) {
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        link.setAttribute("href", url);
-        link.setAttribute("download", filename);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-
-    async function getAllRollsLive() {
-        const bayNames = appState.bays.map(b => b.bay_no);
-        const promises = bayNames.map(async (bayName) => {
-            try {
-                const response = await fetch(`/api/method/warehouse_management.api.stock_api.get_bay_details?bay_name=${encodeURIComponent(bayName)}`);
-                const result = await response.json();
-                if (result.message && result.message.status === 'success') {
-                    let rolls = [];
-                    result.message.data.forEach(group => {
-                        group.rolls.forEach(roll => {
-                            rolls.push({
-                                batch_no: roll.batch_no,
-                                custom_order_code: group.order_code,
-                                manufacturing_date: roll.mfg_date || roll.manufacturing_date,
-                                expiry_date: roll.expiry_date,
-                                custom_bay: bayName,
-                                qty: roll.kgs || roll.qty
-                            });
-                        });
-                    });
-                    return rolls;
-                }
-            } catch (e) {
-                console.error("Failed fetching rolls for " + bayName, e);
-            }
-            return [];
-        });
-        const results = await Promise.all(promises);
-        return results.flat();
-    }
-
-    async function exportAllStockExcel() {
-        let rolls = [];
-        if (appState.isDemoMode) {
-            rolls = appState.mockDatabase[appState.activeUnit] || [];
-        } else {
-            showToast("Generating stock report...", "info");
-            rolls = await getAllRollsLive();
-        }
-        
-        if (rolls.length === 0) {
-            showToast("No stock records to export.", "error");
-            return;
-        }
-        
-        let csv = "Roll Batch Number,Item Code,Order Code,Weight (KGs),Warehouse Location,Mfg Date,Expiry Date\n";
-        rolls.forEach(r => {
-            const mfg = r.manufacturing_date || r.mfg_date || '';
-            const exp = r.expiry_date || '';
-            const weight = r.qty !== undefined ? r.qty : r.kgs;
-            csv += `"${r.batch_no}","JS-SPUN-BOND","${r.custom_order_code || ''}",${weight.toFixed(2)},"${r.custom_bay || ''}","${mfg}","${exp}"\n`;
-        });
-        
-        const filename = `wms_stock_report_${appState.activeUnit}_${new Date().toISOString().slice(0,10)}.csv`;
-        downloadCSV(csv, filename);
-        showToast("Excel stock report downloaded successfully!", "success");
-    }
-
-    async function exportAllStockPDF() {
-        let rolls = [];
-        if (appState.isDemoMode) {
-            rolls = appState.mockDatabase[appState.activeUnit] || [];
-        } else {
-            showToast("Generating PDF report...", "info");
-            rolls = await getAllRollsLive();
-        }
-        
-        if (rolls.length === 0) {
-            showToast("No stock records to print.", "error");
-            return;
-        }
-        
-        // Sort rolls by bay then order code
-        rolls.sort((a,b) => {
-            if (a.custom_bay !== b.custom_bay) return a.custom_bay.localeCompare(b.custom_bay);
-            return (a.custom_order_code || '').localeCompare(b.custom_order_code || '');
-        });
-        
-        const totalRolls = rolls.length;
-        const totalWeight = rolls.reduce((sum, r) => sum + (r.qty !== undefined ? r.qty : r.kgs), 0);
-        const unitName = appState.activeUnit.replace('unit_', 'Unit ').toUpperCase();
-        
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <html>
-            <head>
-                <title>WMS Inventory Report - ${unitName}</title>
-                <style>
-                    body { font-family: sans-serif; color: #1e293b; padding: 40px; }
-                    .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; }
-                    .header h1 { margin: 0; font-size: 22px; color: #0f172a; }
-                    .header p { margin: 4px 0 0 0; font-size: 13px; color: #64748b; }
-                    .summary { display: flex; gap: 40px; background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 24px; border: 1px solid #e2e8f0; }
-                    .summary-item { display: flex; flex-direction: column; }
-                    .summary-item .label { font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.5px; }
-                    .summary-item .value { font-size: 16px; font-weight: 700; color: #0f172a; margin-top: 4px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                    th { background: #f1f5f9; color: #475569; font-weight: 600; text-align: left; padding: 10px; font-size: 12px; border-bottom: 1px solid #e2e8f0; }
-                    td { padding: 10px; font-size: 12px; border-bottom: 1px solid #f1f5f9; }
-                    tr:nth-child(even) td { background: #f8fafc; }
-                    .text-right { text-align: right; }
-                    @media print {
-                        body { padding: 0; }
-                        button { display: none; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <div>
-                        <h1>JAYASHREE SPUN BOND</h1>
-                        <p>WMS Stock Ledger Report &mdash; ${unitName}</p>
-                    </div>
-                    <div>
-                        <p><strong>Report Date:</strong> ${new Date().toLocaleString()}</p>
-                    </div>
-                </div>
-                <div class="summary">
-                    <div class="summary-item">
-                        <span class="label">Total Rolls Listed</span>
-                        <span class="value">${totalRolls} Rolls</span>
-                    </div>
-                    <div class="summary-item">
-                        <span class="label">Net Stock Weight</span>
-                        <span class="value">${totalWeight.toFixed(2)} KGs</span>
-                    </div>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Roll Batch No.</th>
-                            <th>Warehouse Bay</th>
-                            <th>Order Code</th>
-                            <th>Mfg Date</th>
-                            <th>Expiry Date</th>
-                            <th class="text-right">Weight (KGs)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rolls.map((r, i) => `
-                            <tr>
-                                <td>${i + 1}</td>
-                                <td><strong>${r.batch_no}</strong></td>
-                                <td>${r.custom_bay || 'UNASSIGNED'}</td>
-                                <td>${r.custom_order_code || '-'}</td>
-                                <td>${r.manufacturing_date || r.mfg_date || '-'}</td>
-                                <td>${r.expiry_date || '-'}</td>
-                                <td class="text-right"><strong>${(r.qty !== undefined ? r.qty : r.kgs).toFixed(2)}</strong></td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-                <script>
-                    window.onload = function() {
-                        window.print();
-                        setTimeout(() => window.close(), 1000);
-                    }
-                <\/script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-    }
-
-    function exportDrawerExcel() {
-        if (!appState.currentBayDetails || appState.currentBayDetails.length === 0) {
-            showToast("No records in this bay to export.", "error");
-            return;
-        }
-        
-        let csv = "Roll Batch Number,Order Code,Weight (KGs),Mfg Date,Expiry Date\n";
-        appState.currentBayDetails.forEach(group => {
-            group.rolls.forEach(r => {
-                const batchNo = r.batch_no;
-                const mfg = r.mfg_date || r.manufacturing_date || '';
-                const exp = r.expiry_date || '';
-                const weight = r.kgs !== undefined ? r.kgs : r.qty;
-                csv += `"${batchNo}","${group.order_code}",${weight.toFixed(2)},"${mfg}","${exp}"\n`;
-            });
-        });
-        
-        const filename = `wms_report_bay_${appState.selectedBayName}_${new Date().toISOString().slice(0,10)}.csv`;
-        downloadCSV(csv, filename);
-        showToast(`Excel report for Bay ${appState.selectedBayName} downloaded!`, "success");
-    }
-
-    function exportDrawerPDF() {
-        if (!appState.currentBayDetails || appState.currentBayDetails.length === 0) {
-            showToast("No records in this bay to print.", "error");
-            return;
-        }
-        
-        const rolls = [];
-        appState.currentBayDetails.forEach(group => {
-            group.rolls.forEach(r => {
-                rolls.push({
-                    batch_no: r.batch_no,
-                    order_code: group.order_code,
-                    kgs: r.kgs !== undefined ? r.kgs : r.qty,
-                    mfg_date: r.mfg_date || r.manufacturing_date || '-',
-                    expiry_date: r.expiry_date || '-'
-                });
-            });
-        });
-        
-        const totalRolls = rolls.length;
-        const totalWeight = rolls.reduce((sum, r) => sum + r.kgs, 0);
-        const bayName = appState.selectedBayName;
-        const unitName = appState.activeUnit.replace('unit_', 'Unit ').toUpperCase();
-        
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <html>
-            <head>
-                <title>WMS Bay Stock Report - ${bayName} (${unitName})</title>
-                <style>
-                    body { font-family: sans-serif; color: #1e293b; padding: 40px; }
-                    .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; }
-                    .header h1 { margin: 0; font-size: 22px; color: #9900cc; }
-                    .header p { margin: 4px 0 0 0; font-size: 13px; color: #64748b; }
-                    .summary { display: flex; gap: 40px; background: #faf5ff; padding: 16px; border-radius: 8px; margin-bottom: 24px; border: 1px solid #f3d8f8; }
-                    .summary-item { display: flex; flex-direction: column; }
-                    .summary-item .label { font-size: 10px; text-transform: uppercase; color: #9c00e6; font-weight: 700; letter-spacing: 0.5px; }
-                    .summary-item .value { font-size: 16px; font-weight: 700; color: #0f172a; margin-top: 4px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                    th { background: #faf5ff; color: #6b21a8; font-weight: 600; text-align: left; padding: 10px; font-size: 12px; border-bottom: 1px solid #f3d8f8; }
-                    td { padding: 10px; font-size: 12px; border-bottom: 1px solid #f3d8f8; }
-                    tr:nth-child(even) td { background: #faf5ff; }
-                    .text-right { text-align: right; }
-                    @media print {
-                        body { padding: 0; }
-                        button { display: none; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <div>
-                        <h1>JAYASHREE SPUN BOND</h1>
-                        <p>Bay Inventory Ledger &mdash; ${bayName} (${unitName})</p>
-                    </div>
-                    <div>
-                        <p><strong>Report Date:</strong> ${new Date().toLocaleString()}</p>
-                    </div>
-                </div>
-                <div class="summary">
-                    <div class="summary-item">
-                        <span class="label">Bays Location</span>
-                        <span class="value">${bayName}</span>
-                    </div>
-                    <div class="summary-item">
-                        <span class="label">Total Rolls in Bay</span>
-                        <span class="value">${totalRolls} Rolls</span>
-                    </div>
-                    <div class="summary-item">
-                        <span class="label">Net Weight inside Bay</span>
-                        <span class="value">${totalWeight.toFixed(2)} KGs</span>
-                    </div>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Roll Batch No.</th>
-                            <th>Order Code</th>
-                            <th>Mfg Date</th>
-                            <th>Expiry Date</th>
-                            <th class="text-right">Weight (KGs)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rolls.map((r, i) => `
-                            <tr>
-                                <td>${i + 1}</td>
-                                <td><strong>${r.batch_no}</strong></td>
-                                <td>${r.order_code}</td>
-                                <td>${r.mfg_date}</td>
-                                <td>${r.expiry_date}</td>
-                                <td class="text-right"><strong>${r.kgs.toFixed(2)}</strong></td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-                <script>
-                    window.onload = function() {
-                        window.print();
-                        setTimeout(() => window.close(), 1000);
-                    }
-                <\/script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-    }
-
-    function addMovementLog(batchNo, source, dest, weight, status = 'COMPLETED') {
-        if (movementsLogTbody.children.length === 1 && movementsLogTbody.children[0].querySelector('td[colspan]')) {
-            movementsLogTbody.innerHTML = '';
-        }
-        
-        const tr = document.createElement('tr');
-        const timeStr = new Date().toLocaleString();
-        tr.innerHTML = `
-            <td>${timeStr}</td>
-            <td><strong>${batchNo}</strong></td>
-            <td><span class="val-badge">${source}</span></td>
-            <td><span class="val-badge" style="color:var(--accent-purple); border-color:rgba(153,0,204,0.2); background:rgba(153,0,204,0.05);">${dest}</span></td>
-            <td>${weight.toFixed(2)} KGs</td>
-            <td>Operator (FRA)</td>
-            <td><span class="status-badge ${status.toLowerCase()}">${status}</span></td>
-        `;
-        
-        movementsLogTbody.insertBefore(tr, movementsLogTbody.firstChild);
-    }
-
-    function prepopulateMovementLog() {
-        movementsLogTbody.innerHTML = '';
-        
-        const mockLogs = [
-            { batch: 'JS-0306261/12', from: 'UNASSIGNED', to: 'OUTSIDE', weight: 44.15, timeOffset: 5 },
-            { batch: 'JS-0306261/8', from: 'UNASSIGNED', to: 'B1', weight: 45.30, timeOffset: 12 },
-            { batch: 'JS-0306261/19', from: 'OUTSIDE', to: 'B2', weight: 44.15, timeOffset: 25 }
-        ];
-        
-        mockLogs.forEach(log => {
-            const tr = document.createElement('tr');
-            const time = new Date(Date.now() - log.timeOffset * 60000).toLocaleString();
-            tr.innerHTML = `
-                <td>${time}</td>
-                <td><strong>${log.batch}</strong></td>
-                <td><span class="val-badge">${log.from}</span></td>
-                <td><span class="val-badge" style="color:var(--accent-purple); border-color:rgba(153,0,204,0.2); background:rgba(153,0,204,0.05);">${log.to}</span></td>
-                <td>${log.weight.toFixed(2)} KGs</td>
-                <td>Operator (FRA)</td>
-                <td><span class="status-badge completed">COMPLETED</span></td>
-            `;
-            movementsLogTbody.appendChild(tr);
-        });
-    }
-
-    prepopulateMovementLog();
-
-    // --- INITIAL LOAD ---
+    // --- INITIALIZATION ACTIONS ---
+    checkFrappeConnection();
     fetchData();
+    refreshBtn.addEventListener('click', () => {
+        showToast("Synchronizing with ERPNext...", "success");
+        fetchData();
+    });
+
+    unitSelect.addEventListener('change', fetchData);
+
+    function debounce(func, wait) {
+        let timeout;
+        return function () {
+            const context = this, args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), wait);
+        };
+    }
 });
