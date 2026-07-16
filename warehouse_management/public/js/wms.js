@@ -174,12 +174,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- CONNECTION CHECK & APP INITIALIZATION ---
     function checkFrappeConnection() {
-        if (typeof frappe !== 'undefined') {
+        // If we are not running locally from file:/// protocol, try using live APIs
+        if (window.location.protocol !== 'file:') {
             appState.isDemoMode = false;
             demoModeBadge.className = 'mode-badge live-active';
             demoModeBadge.querySelector('.badge-text').textContent = 'Live Connected';
             
-            if (frappe.realtime) {
+            // Connect to Realtime WebSockets if available
+            if (typeof frappe !== 'undefined' && frappe.realtime) {
                 frappe.realtime.on('wms_bay_update', function(data) {
                     showToast(`WebSocket: Roll ${data.batch_no} moved to ${data.new_bay}`, 'success');
                     fetchData();
