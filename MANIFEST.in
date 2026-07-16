@@ -2,11 +2,11 @@ include MANIFEST.in
 include requirements.txt
 include *.py
 include *.md
-recursive-include wms_app *.html
-recursive-include wms_app *.txt
-recursive-include wms_app *.js
-recursive-include wms_app *.css
-recursive-include wms_app *.png
-recursive-include wms_app *.jpg
-recursive-include wms_app *.svg
-recursive-include wms_app *.json
+recursive-include warehouse_management *.html
+recursive-include warehouse_management *.txt
+recursive-include warehouse_management *.js
+recursive-include warehouse_management *.css
+recursive-include warehouse_management *.png
+recursive-include warehouse_management *.jpg
+recursive-include warehouse_management *.svg
+recursive-include warehouse_management *.json

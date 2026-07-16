@@ -1,1 +1,1 @@
-# python dependencies for wms_app
+# python dependencies for warehouse_management
