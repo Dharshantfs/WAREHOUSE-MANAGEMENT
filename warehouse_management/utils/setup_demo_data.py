@@ -50,6 +50,21 @@ def setup_demo_data():
             item.is_stock_item = 1
             item.has_batch_no = 1
             item.create_new_batch = 0
+            
+            # India Compliance / India Regional HSN/SAC Code required field fix
+            hsn_code = "5603"
+            if frappe.db.exists("DocType", "GST HSN Code"):
+                if not frappe.db.exists("GST HSN Code", hsn_code):
+                    try:
+                        hsn_doc = frappe.new_doc("GST HSN Code")
+                        hsn_doc.name = hsn_code
+                        hsn_doc.hsn_code = hsn_code
+                        hsn_doc.description = "Nonwovens"
+                        hsn_doc.insert(ignore_permissions=True)
+                    except Exception:
+                        pass
+                item.gst_hsn_code = hsn_code
+                
             item.insert(ignore_permissions=True)
 
         # 3. Create 22 Batches (rolls) inside OUTSIDE bay
