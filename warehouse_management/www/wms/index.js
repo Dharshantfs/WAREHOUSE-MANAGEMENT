@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         try {
-            const response = await fetch('/api/method/wms_app.api.stock_api.get_bay_summary');
+            const response = await fetch('/api/method/warehouse_management.api.stock_api.get_bay_summary');
             const result = await response.json();
             
             if (result.message && result.message.status === 'success') {
@@ -259,7 +259,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }, 200); // Simulate API latency
         } else {
             try {
-                const response = await fetch(`/api/method/wms_app.api.stock_api.get_bay_details?bay_name=${encodeURIComponent(bayName)}`);
+                const response = await fetch(`/api/method/warehouse_management.api.stock_api.get_bay_details?bay_name=${encodeURIComponent(bayName)}`);
                 const result = await response.json();
                 
                 if (result.message && result.message.status === 'success') {
@@ -414,7 +414,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (group) oldBayVal = appState.selectedBayName || 'UNASSIGNED';
             }
             
-            const response = await fetch('/api/method/wms_app.api.stock_api.update_batch_bay', {
+            const response = await fetch('/api/method/warehouse_management.api.stock_api.update_batch_bay', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -674,7 +674,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         try {
-            const response = await fetch(`/api/method/wms_app.api.ai_api.get_ai_suggestions?batch_no=${encodeURIComponent(batchNo)}&item_code=JS-SPUN-BOND`);
+            const response = await fetch(`/api/method/warehouse_management.api.ai_api.get_ai_suggestions?batch_no=${encodeURIComponent(batchNo)}&item_code=JS-SPUN-BOND`);
             const result = await response.json();
             
             if (result.message && result.message.status === 'success') {
@@ -766,7 +766,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Live API call
         try {
-            const response = await fetch('/api/method/wms_app.api.ai_api.process_chat_query', {
+            const response = await fetch('/api/method/warehouse_management.api.ai_api.process_chat_query', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -826,7 +826,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const bayNames = appState.bays.map(b => b.bay_no);
         const promises = bayNames.map(async (bayName) => {
             try {
-                const response = await fetch(`/api/method/wms_app.api.stock_api.get_bay_details?bay_name=${encodeURIComponent(bayName)}`);
+                const response = await fetch(`/api/method/warehouse_management.api.stock_api.get_bay_details?bay_name=${encodeURIComponent(bayName)}`);
                 const result = await response.json();
                 if (result.message && result.message.status === 'success') {
                     let rolls = [];

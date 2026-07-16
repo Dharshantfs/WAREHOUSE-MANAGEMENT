@@ -1,4 +1,4 @@
-app_name = "wms_app"
+app_name = "warehouse_management"
 app_title = "WMS Roll & Bay Stock Tracker"
 app_publisher = "Antigravity"
 app_description = "WMS Roll & Bay Stock Tracker for Jayashree Spun Bond"

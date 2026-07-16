@@ -70,7 +70,7 @@ def detect_anomalies(batch_no):
         return anomalies
         
     # Check 1: Zero or Negative Weight in Stock Ledger
-    from wms_app.wms_app.api.stock_api import get_batch_qty
+    from warehouse_management.warehouse_management.api.stock_api import get_batch_qty
     qty = get_batch_qty(batch_no)
     if qty <= 0:
         anomalies.append({
