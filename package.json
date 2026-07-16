@@ -1,0 +1,9 @@
+{
+  "name": "warehouse_management",
+  "version": "0.0.1",
+  "description": "WMS Roll & Bay Stock Tracker for Jayashree Spun Bond",
+  "scripts": {
+    "build": "echo 'No build step required for this app'"
+  },
+  "devDependencies": {}
+}
