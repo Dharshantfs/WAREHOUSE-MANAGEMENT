@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wms_app"
+authors = [
+    { name = "Antigravity", email = "antigravity@gemini.com" }
+]
+description = "WMS Roll & Bay Stock Tracker"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools.dynamic]
+version = { attr = "wms_app.__version__" }
+dependencies = { file = ["requirements.txt"] }

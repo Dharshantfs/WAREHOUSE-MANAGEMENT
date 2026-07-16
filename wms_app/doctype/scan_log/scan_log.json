@@ -1,0 +1,80 @@
+{
+  "name": "Scan Log",
+  "doctype": "DocType",
+  "module": "WMS App",
+  "custom": 0,
+  "issingle": 0,
+  "istable": 0,
+  "editable_grid": 1,
+  "track_changes": 1,
+  "naming_rule": "Expression (GUID)",
+  "autoname": "hash",
+  "fields": [
+    {
+      "fieldname": "timestamp",
+      "fieldtype": "Datetime",
+      "label": "Timestamp",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "user",
+      "fieldtype": "Link",
+      "options": "User",
+      "label": "User",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "barcode_scanned",
+      "fieldtype": "Data",
+      "label": "Barcode Scanned",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "batch_no",
+      "fieldtype": "Link",
+      "options": "Batch",
+      "label": "Batch No",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "old_bay",
+      "fieldtype": "Link",
+      "options": "Warehouse Bay",
+      "label": "Old Bay"
+    },
+    {
+      "fieldname": "new_bay",
+      "fieldtype": "Link",
+      "options": "Warehouse Bay",
+      "label": "New Bay",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "qty",
+      "fieldtype": "Float",
+      "label": "Weight (KGs)"
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1
+    },
+    {
+      "role": "Warehouse Operator",
+      "read": 1,
+      "create": 1
+    },
+    {
+      "role": "Warehouse Supervisor",
+      "read": 1,
+      "create": 1,
+      "delete": 1
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+include MANIFEST.in
+include requirements.txt
+include *.py
+include *.md
+recursive-include wms_app *.html
+recursive-include wms_app *.txt
+recursive-include wms_app *.js
+recursive-include wms_app *.css
+recursive-include wms_app *.png
+recursive-include wms_app *.jpg
+recursive-include wms_app *.svg
+recursive-include wms_app *.json

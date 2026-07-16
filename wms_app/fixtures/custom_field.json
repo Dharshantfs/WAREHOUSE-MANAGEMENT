@@ -1,0 +1,21 @@
+[
+  {
+    "doctype": "Custom Field",
+    "dt": "Batch",
+    "fieldname": "custom_bay",
+    "fieldtype": "Link",
+    "options": "Warehouse Bay",
+    "label": "Bay",
+    "insert_after": "warehouse",
+    "in_list_view": 1
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Batch",
+    "fieldname": "custom_order_code",
+    "fieldtype": "Data",
+    "label": "Order Code",
+    "insert_after": "custom_bay",
+    "in_list_view": 1
+  }
+]
