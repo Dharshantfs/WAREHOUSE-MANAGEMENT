@@ -1,6 +1,7 @@
 [
   {
     "doctype": "Custom Field",
+    "name": "Batch-custom_bay",
     "dt": "Batch",
     "fieldname": "custom_bay",
     "fieldtype": "Link",
@@ -11,6 +12,7 @@
   },
   {
     "doctype": "Custom Field",
+    "name": "Batch-custom_order_code",
     "dt": "Batch",
     "fieldname": "custom_order_code",
     "fieldtype": "Data",
