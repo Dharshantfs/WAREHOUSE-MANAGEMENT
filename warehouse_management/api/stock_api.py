@@ -139,10 +139,17 @@ def get_bay_details(bay_name):
         return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
-def update_batch_bay(batch_no, new_bay, barcode_scanned=None):
+def update_batch_bay(**kwargs):
     """
     Update a batch/roll's bay assignment and write a Scan Log entry.
     """
+    batch_no = kwargs.get("batch_no")
+    new_bay = kwargs.get("new_bay")
+    barcode_scanned = kwargs.get("barcode_scanned")
+    
+    if not batch_no or not new_bay:
+        return {"status": "error", "message": f"Missing required parameters: batch_no='{batch_no}', new_bay='{new_bay}'"}
+
     try:
         if not frappe.db.exists("Batch", batch_no):
             return {"status": "error", "message": f"Roll/Batch '{batch_no}' not found."}
