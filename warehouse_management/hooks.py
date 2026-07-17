@@ -22,3 +22,7 @@ fixtures = [
         ]
     }
 ]
+
+doctype_js = {
+    "Batch": "public/js/batch.js"
+}
