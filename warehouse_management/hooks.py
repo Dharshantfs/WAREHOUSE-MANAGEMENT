@@ -20,7 +20,8 @@ fixtures = [
         "filters": [
             ["dt", "in", ["Batch"]]
         ]
-    }
+    },
+    "Warehouse Bay"
 ]
 
 doctype_js = {
