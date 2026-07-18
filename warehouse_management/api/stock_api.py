@@ -141,57 +141,68 @@ def get_bay_details(bay_name):
 @frappe.whitelist()
 def update_batch_bay(**kwargs):
     """
-    Update a batch/roll's bay assignment and write a Scan Log entry.
+    Update a batch/roll's bay assignment (or multiple) and write a Scan Log entry.
     """
     batch_no = kwargs.get("batch_no")
+    batch_ids = kwargs.get("batch_ids")
     new_bay = kwargs.get("new_bay")
     barcode_scanned = kwargs.get("barcode_scanned")
     
-    if not batch_no or not new_bay:
-        return {"status": "error", "message": f"Missing required parameters: batch_no='{batch_no}', new_bay='{new_bay}'"}
+    if not new_bay:
+        return {"status": "error", "message": f"Missing required parameters: new_bay='{new_bay}'"}
+
+    batches = batch_ids if batch_ids else ([batch_no] if batch_no else [])
+    
+    if not batches:
+        return {"status": "error", "message": "Missing required parameters: batch_no or batch_ids"}
 
     try:
-        if not frappe.db.exists("Batch", batch_no):
-            return {"status": "error", "message": f"Roll/Batch '{batch_no}' not found."}
-            
         # If new bay is not OUTSIDE/UNASSIGNED and doesn't exist, auto-create it
         if new_bay not in ["OUTSIDE", "UNASSIGNED"] and not frappe.db.exists("Warehouse Bay", new_bay):
             bay_doc = frappe.new_doc("Warehouse Bay")
             bay_doc.bay_name = new_bay
             bay_doc.insert(ignore_permissions=True)
             
-        old_bay = frappe.db.get_value("Batch", batch_no, "custom_bay")
-        qty = get_batch_qty(batch_no)
-        
-        # Update Batch custom bay field (set to None for UNASSIGNED)
-        db_bay_value = None if new_bay == "UNASSIGNED" else new_bay
-        frappe.db.set_value("Batch", batch_no, "custom_bay", db_bay_value)
-        frappe.db.commit()
-        
-        # Write to Scan Log
-        log = frappe.new_doc("Scan Log")
-        log.timestamp = now_datetime()
-        log.user = frappe.session.user
-        log.barcode_scanned = barcode_scanned or batch_no
-        log.batch_no = batch_no
-        log.old_bay = old_bay
-        log.new_bay = new_bay
-        log.qty = qty
-        log.insert(ignore_permissions=True)
-        
-        # Real-time WebSockets event
-        try:
-            frappe.publish_realtime("wms_bay_update", {
-                "batch_no": batch_no,
-                "old_bay": old_bay,
-                "new_bay": new_bay,
-                "qty": qty,
-                "user": frappe.session.user
-            })
-        except Exception:
-            pass # SocketIO might not be configured in this environment
+        success_msgs = []
+        for b_no in batches:
+            if not frappe.db.exists("Batch", b_no):
+                continue
+
+            old_bay = frappe.db.get_value("Batch", b_no, "custom_bay")
+            qty = get_batch_qty(b_no)
             
-        return {"status": "success", "message": f"Roll '{batch_no}' reassigned to '{new_bay}'."}
+            # Update Batch custom bay field (set to None for UNASSIGNED)
+            db_bay_value = None if new_bay == "UNASSIGNED" else new_bay
+            frappe.db.set_value("Batch", b_no, "custom_bay", db_bay_value)
+            
+            # Write to Scan Log
+            log = frappe.new_doc("Scan Log")
+            log.timestamp = now_datetime()
+            log.user = frappe.session.user
+            log.barcode_scanned = barcode_scanned or b_no
+            log.batch_no = b_no
+            log.old_bay = old_bay
+            log.new_bay = new_bay
+            log.qty = qty
+            log.insert(ignore_permissions=True)
+            
+            # Real-time WebSockets event
+            try:
+                frappe.publish_realtime("wms_bay_update", {
+                    "batch_no": b_no,
+                    "old_bay": old_bay,
+                    "new_bay": new_bay,
+                    "qty": qty,
+                    "user": frappe.session.user
+                })
+            except Exception:
+                pass # SocketIO might not be configured in this environment
+            success_msgs.append(b_no)
+        
+        frappe.db.commit()
+            
+        return {"status": "success", "message": f"Rolls reassigned: {', '.join(success_msgs)}"}
     except Exception as e:
+        frappe.db.rollback()
         frappe.log_error(message=str(e), title="WMS Update Batch Bay Error")
         return {"status": "error", "message": str(e)}
