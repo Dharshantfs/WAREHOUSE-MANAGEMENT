@@ -138,21 +138,33 @@ def get_bay_details(bay_name):
         frappe.log_error(message=str(e), title="WMS Get Bay Details Error")
         return {"status": "error", "message": str(e)}
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=False)
 def update_batch_bay(**kwargs):
     """
     Update a batch/roll's bay assignment (or multiple) and write a Scan Log entry.
+    Accepts: batch_ids (list or repeated form param), batch_no (single), new_bay.
     """
+    import json as _json
+
     batch_no = kwargs.get("batch_no")
-    batch_ids = kwargs.get("batch_ids")
     new_bay = kwargs.get("new_bay")
     barcode_scanned = kwargs.get("barcode_scanned")
-    
-    if not new_bay:
-        return {"status": "error", "message": f"Missing required parameters: new_bay='{new_bay}'"}
 
-    batches = batch_ids if batch_ids else ([batch_no] if batch_no else [])
-    
+    # batch_ids can arrive as a JSON string (application/json) or a list
+    # (repeated form params parsed by Frappe into a list automatically).
+    raw_ids = kwargs.get("batch_ids")
+    if isinstance(raw_ids, str):
+        try:
+            raw_ids = _json.loads(raw_ids)
+        except Exception:
+            raw_ids = [raw_ids] if raw_ids else []
+    elif raw_ids is None:
+        raw_ids = []
+
+    batches = list(raw_ids) if raw_ids else ([batch_no] if batch_no else [])
+
+    if not new_bay:
+        return {"status": "error", "message": f"Missing required parameter: new_bay"}
     if not batches:
         return {"status": "error", "message": "Missing required parameters: batch_no or batch_ids"}
 
