@@ -138,83 +138,134 @@ def get_bay_details(bay_name):
         frappe.log_error(message=str(e), title="WMS Get Bay Details Error")
         return {"status": "error", "message": str(e)}
 
-@frappe.whitelist(allow_guest=False)
-def update_batch_bay(**kwargs):
+@frappe.whitelist()
+def update_batch_bay(batch_ids=None, target_bay=None, new_bay=None,
+                     batch_no=None, barcode_scanned=None):
     """
-    Update a batch/roll's bay assignment (or multiple) and write a Scan Log entry.
-    Accepts: batch_ids (list or repeated form param), batch_no (single), new_bay.
+    Transfer one or more Batch documents to a new bay slot.
+
+    Args:
+        batch_ids  : JSON string or Python list of Batch names.
+        target_bay : Destination slot string, e.g. 'A1-F-L1'  (preferred).
+        new_bay    : Alias for target_bay (kept for backward-compatibility).
+        batch_no   : Single Batch name (alternative to batch_ids).
+        barcode_scanned : Optional raw barcode string for the Scan Log.
+
+    Returns:
+        dict with keys ``status`` ('success' | 'error') and ``message``.
     """
     import json as _json
 
-    batch_no = kwargs.get("batch_no")
-    new_bay = kwargs.get("new_bay")
-    barcode_scanned = kwargs.get("barcode_scanned")
+    # ── 1. Resolve destination bay ───────────────────────────────────────────
+    destination = target_bay or new_bay
+    if not destination:
+        frappe.throw("Missing required parameter: target_bay", frappe.ValidationError)
 
-    # batch_ids can arrive as a JSON string (application/json) or a list
-    # (repeated form params parsed by Frappe into a list automatically).
-    raw_ids = kwargs.get("batch_ids")
-    if isinstance(raw_ids, str):
+    # ── 2. Resolve batch list ────────────────────────────────────────────────
+    # batch_ids may arrive as:
+    #   • a Python list  (frappe.call with args=)
+    #   • a JSON string  (form-encoded POST: batch_ids='["JS-001","JS-002"]')
+    #   • a plain string (single ID sent as form field)
+    if isinstance(batch_ids, str):
         try:
-            raw_ids = _json.loads(raw_ids)
-        except Exception:
-            raw_ids = [raw_ids] if raw_ids else []
-    elif raw_ids is None:
-        raw_ids = []
+            batch_ids = _json.loads(batch_ids)
+        except (ValueError, TypeError):
+            # Treat the raw string as a single batch ID
+            batch_ids = [batch_ids] if batch_ids else []
+    elif batch_ids is None:
+        batch_ids = []
 
-    batches = list(raw_ids) if raw_ids else ([batch_no] if batch_no else [])
+    # Also accept the legacy single-batch param
+    if batch_no and batch_no not in batch_ids:
+        batch_ids.append(batch_no)
 
-    if not new_bay:
-        return {"status": "error", "message": f"Missing required parameter: new_bay"}
-    if not batches:
-        return {"status": "error", "message": "Missing required parameters: batch_no or batch_ids"}
+    if not batch_ids:
+        frappe.throw(
+            "Missing required parameter: batch_ids (or batch_no)",
+            frappe.ValidationError,
+        )
 
-    try:
-        # If new bay is not OUTSIDE/UNASSIGNED and doesn't exist, auto-create it
-        if new_bay not in ["OUTSIDE", "UNASSIGNED"] and not frappe.db.exists("Warehouse Bay", new_bay):
+    # ── 3. Auto-create Warehouse Bay if needed ───────────────────────────────
+    reserved = {"OUTSIDE", "UNASSIGNED"}
+    if destination not in reserved:
+        if not frappe.db.exists("Warehouse Bay", destination):
             bay_doc = frappe.new_doc("Warehouse Bay")
-            bay_doc.bay_name = new_bay
+            bay_doc.bay_name = destination
             bay_doc.insert(ignore_permissions=True)
-            
-        success_msgs = []
-        for b_no in batches:
-            if not frappe.db.exists("Batch", b_no):
-                continue
 
-            old_bay = frappe.db.get_value("Batch", b_no, "custom_bay")
-            qty = get_batch_qty(b_no)
-            
-            # Update Batch custom bay field (set to None for UNASSIGNED)
-            db_bay_value = None if new_bay == "UNASSIGNED" else new_bay
-            frappe.db.set_value("Batch", b_no, "custom_bay", db_bay_value)
-            
-            # Write to Scan Log
+    # ── 4. Update each Batch ─────────────────────────────────────────────────
+    transferred = []
+    skipped = []
+
+    for batch_id in batch_ids:
+        if not batch_id:
+            continue
+
+        if not frappe.db.exists("Batch", batch_id):
+            skipped.append(batch_id)
+            continue
+
+        # Load the full document so all hooks/validations run on save()
+        doc = frappe.get_doc("Batch", batch_id)
+        old_bay = doc.get("custom_bay") or ""
+
+        # Set the bay location field
+        doc.custom_bay = None if destination == "UNASSIGNED" else destination
+
+        # save() triggers validation hooks; ignore_permissions so non-admin
+        # users running from the WMS app can still transfer rolls
+        doc.save(ignore_permissions=True)
+
+        # ── 4a. Append a Scan Log entry ──────────────────────────────────────
+        try:
             log = frappe.new_doc("Scan Log")
-            log.timestamp = now_datetime()
-            log.user = frappe.session.user
-            log.barcode_scanned = barcode_scanned or b_no
-            log.batch_no = b_no
-            log.old_bay = old_bay
-            log.new_bay = new_bay
-            log.qty = qty
+            log.timestamp    = now_datetime()
+            log.user         = frappe.session.user
+            log.barcode_scanned = barcode_scanned or batch_id
+            log.batch_no     = batch_id
+            log.old_bay      = old_bay
+            log.new_bay      = destination
+            log.qty          = get_batch_qty(batch_id)
             log.insert(ignore_permissions=True)
-            
-            # Real-time WebSockets event
-            try:
-                frappe.publish_realtime("wms_bay_update", {
-                    "batch_no": b_no,
-                    "old_bay": old_bay,
-                    "new_bay": new_bay,
-                    "qty": qty,
-                    "user": frappe.session.user
-                })
-            except Exception:
-                pass # SocketIO might not be configured in this environment
-            success_msgs.append(b_no)
-        
-        frappe.db.commit()
-            
-        return {"status": "success", "message": f"Rolls reassigned: {', '.join(success_msgs)}"}
-    except Exception as e:
-        frappe.db.rollback()
-        frappe.log_error(message=str(e), title="WMS Update Batch Bay Error")
-        return {"status": "error", "message": str(e)}
+        except Exception:
+            # Scan Log is non-critical; don't block the transfer if the
+            # doctype is missing or has validation errors in this site.
+            pass
+
+        # ── 4b. Real-time push via WebSockets ────────────────────────────────
+        try:
+            frappe.publish_realtime(
+                "wms_bay_update",
+                {
+                    "batch_no" : batch_id,
+                    "old_bay"  : old_bay,
+                    "new_bay"  : destination,
+                    "qty"      : get_batch_qty(batch_id),
+                    "user"     : frappe.session.user,
+                },
+            )
+        except Exception:
+            pass  # SocketIO may not be configured; non-fatal
+
+        transferred.append(batch_id)
+
+    # ── 5. Commit and respond ─────────────────────────────────────────────────
+    frappe.db.commit()
+
+    if not transferred:
+        return {
+            "status" : "error",
+            "message": f"No valid batches found. Skipped: {', '.join(skipped) or 'none'}",
+        }
+
+    msg_parts = [f"Transferred {len(transferred)} roll(s) to {destination}"]
+    if skipped:
+        msg_parts.append(f"Skipped (not found): {', '.join(skipped)}")
+
+    return {
+        "status" : "success",
+        "message": ". ".join(msg_parts),
+        "transferred": transferred,
+        "skipped"    : skipped,
+    }
+
