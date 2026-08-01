@@ -31,10 +31,12 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         // Add custom CSS to the iframe for our injected components
         let style = doc.createElement('style');
         style.innerHTML = `
+            .injected-camera-wrapper { margin-top: 0.75rem; width: 100%; display: flex; justify-content: center; }
             .injected-scan-btn {
-                background: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem;
-                font-weight: 500; font-size: 0.875rem; margin-left: 0.5rem; transition: background 0.2s;
+                background: #6366f1; color: white; padding: 0.6rem 1.5rem; border-radius: 0.5rem;
+                font-weight: 600; font-size: 0.875rem; transition: background 0.2s;
                 display: flex; align-items: center; justify-content: center; border: none; cursor: pointer;
+                gap: 6px; box-shadow: 0 2px 8px rgba(99,102,241,0.3);
             }
             .injected-scan-btn:hover { background: #2563eb; }
             .injected-table-container { margin-top: 1.5rem; overflow-x: auto; background: white; border-radius: 0.5rem; border: 1px solid #e2e8f0; }
@@ -57,23 +59,25 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             if (input && !input.hasAttribute('data-scanner-injected')) {
                 input.setAttribute('data-scanner-injected', 'true');
                 
-                // Add the Camera Button next to the input
+                // Add the Camera Button BELOW the input row (not inside it)
+                let inputContainer = input.parentNode;
+                
+                // Create a wrapper div and insert the button AFTER the input container
+                let cameraWrapper = doc.createElement('div');
+                cameraWrapper.className = 'injected-camera-wrapper';
+                
                 let btn = doc.createElement('button');
                 btn.className = 'injected-scan-btn';
-                btn.style.marginLeft = '10px'; // Add margin to separate from React button
                 btn.innerHTML = `
-                    <svg style="width:16px;height:16px;margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    Camera
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    📷 Camera Scanner
                 `;
                 
-                // Determine the layout and inject the button nicely
-                let inputContainer = input.parentNode;
-                inputContainer.style.display = 'flex';
-                inputContainer.style.alignItems = 'center';
-                
-                if (input.nextSibling) {
-                    // Try to place it after the parent's button if the React app has its own button
-                    inputContainer.appendChild(btn);
+                cameraWrapper.appendChild(btn);
+                // Insert after the input container's parent node
+                let scanBlock = inputContainer.parentNode;
+                if (scanBlock && scanBlock.parentNode) {
+                    scanBlock.parentNode.insertBefore(cameraWrapper, scanBlock.nextSibling);
                 } else {
                     inputContainer.appendChild(btn);
                 }
