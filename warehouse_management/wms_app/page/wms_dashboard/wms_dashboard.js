@@ -130,41 +130,39 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                     };
                 };
                 
-                // ── ORDER CODE SEARCH INTERCEPTION ──
+                // ── ORDER CODE SEARCH ──
+                // We listen in BUBBLE phase (not capture) so React handles the Enter first.
+                // After React processes, we do our own search and show the table BELOW
+                // the React result card if multiple rolls match the order code.
                 input.addEventListener('keydown', function(e) {
                     if (e.key === 'Enter') {
                         let val = input.value.trim();
-                        if (val) {
-                            // Immediately fetch all rolls matching this order code or batch id
-                            frappe.call({
-                                method: 'frappe.client.get_list',
-                                args: {
-                                    doctype: 'Batch',
-                                    filters: [
-                                        ['name', 'like', `%${val}%`]
-                                    ],
-                                    or_filters: [
-                                        ['custom_party_code_text', 'like', `%${val}%`]
-                                    ],
-                                    fields: ['name', 'item_name', 'custom_party_code_text', 'custom_bay', 'batch_qty', 'stock_uom'],
-                                    limit_page_length: 500
-                                },
-                                callback: function(r) {
-                                    if (r.message && r.message.length > 1) {
-                                        // Multiple matches found! Stop React from taking over and showing a "Not Found" or single result.
-                                        e.stopImmediatePropagation();
-                                        e.preventDefault();
-                                        
-                                        renderOrderCodeTable(doc, inputContainer, r.message);
-                                    } else {
-                                        // It's a single batch, let the React app handle it natively.
-                                        removeOrderCodeTable(doc);
-                                    }
+                        if (!val) return;
+                        
+                        // Search by order code (custom_party_code_text or custom_order_code)
+                        // We do this in parallel — React shows its result, we show ours below
+                        frappe.call({
+                            method: 'frappe.client.get_list',
+                            args: {
+                                doctype: 'Batch',
+                                filters: [
+                                    ['custom_party_code_text', 'like', `%${val}%`]
+                                ],
+                                fields: ['name', 'item_name', 'custom_party_code_text', 'custom_bay', 'batch_qty', 'stock_uom'],
+                                limit_page_length: 500
+                            },
+                            callback: function(r) {
+                                if (r.message && r.message.length > 0) {
+                                    // Found rolls by order code — show the custom table
+                                    renderOrderCodeTable(doc, inputContainer, r.message, val);
+                                } else {
+                                    // No order code match — clear any previous table (React handles direct batch)
+                                    removeOrderCodeTable(doc);
                                 }
-                            });
-                        }
+                            }
+                        });
                     }
-                }, true); // Use capture phase = true to run BEFORE React's internal keydown listener
+                }); // bubble phase — does NOT intercept React's handling
             }
         });
         
@@ -180,16 +178,9 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         if (reactResults) reactResults.style.display = '';
     }
     
-    function renderOrderCodeTable(doc, inputContainer, batches) {
+    function renderOrderCodeTable(doc, inputContainer, batches, searchVal) {
         removeOrderCodeTable(doc);
-        
-        // Hide the React app's default result card. 
-        // We look for the sibling div that comes after the input container's parent block.
         let mainBlock = inputContainer.parentNode;
-        if (mainBlock && mainBlock.nextElementSibling) {
-            mainBlock.nextElementSibling.id = 'react-scanner-result-container';
-            mainBlock.nextElementSibling.style.display = 'none';
-        }
         
         let container = doc.createElement('div');
         container.id = 'injected-order-table-container';
@@ -198,9 +189,10 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         let html = `
             <div style="padding: 1rem 1.25rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: white;">
                 <div>
-                    <h3 style="margin: 0; font-size: 1.125rem; font-weight: 600; color: #0f172a;">Found ${batches.length} Rolls</h3>
-                    <p style="margin: 0; margin-top: 0.25rem; font-size: 0.875rem; color: #64748b;">Multiple rolls match this order code or prefix</p>
+                    <h3 style="margin: 0; font-size: 1.125rem; font-weight: 600; color: #0f172a;">📦 ${batches.length} Roll${batches.length > 1 ? 's' : ''} — Order: ${searchVal || ''}</h3>
+                    <p style="margin: 0; margin-top: 0.25rem; font-size: 0.875rem; color: #64748b;">All rolls matching this order code and their bay locations</p>
                 </div>
+                <button onclick="document.getElementById('injected-order-table-container').remove()" style="border:none;background:#fee2e2;color:#ef4444;border-radius:0.375rem;padding:0.35rem 0.75rem;cursor:pointer;font-size:0.8rem;font-weight:600;">✕ Close</button>
             </div>
             <table class="injected-table">
                 <thead>
