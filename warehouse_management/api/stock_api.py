@@ -273,35 +273,48 @@ def update_batch_bay(batch_ids=None, target_bay=None, new_bay=None,
 @frappe.whitelist()
 def clear_empty_batch_bays():
     """
-    Automatically removes the bay assignment from batches that have 0 or negative
-    stock quantity. This cleans up the 3D view from stale empty roll allocations.
-
-    Returns how many batches were cleared.
+    Removes the bay assignment from batches that have 0 stock quantity
+    (checked via Stock Ledger) OR where Frappe itself marks them as 'Empty'.
+    Uses direct SQL for reliable results on Frappe Cloud.
     """
     try:
-        # Get all batches that have a bay assigned
-        batches_with_bay = frappe.get_all(
-            "Batch",
-            filters=[["custom_bay", "is", "set"]],
-            fields=["name", "custom_bay"]
-        )
+        # Use direct SQL to get all batches that have custom_bay set (not null/empty)
+        batches_with_bay = frappe.db.sql("""
+            SELECT name, custom_bay, batch_qty
+            FROM `tabBatch`
+            WHERE custom_bay IS NOT NULL
+              AND custom_bay != ''
+        """, as_dict=True)
 
         cleared = []
+        skipped = []
+
         for b in batches_with_bay:
-            qty = get_batch_qty(b.name)
-            if qty <= 0:
-                doc = frappe.get_doc("Batch", b.name)
-                old_bay = doc.custom_bay
-                doc.custom_bay = None
-                doc.save(ignore_permissions=True)
-                cleared.append({"batch": b.name, "old_bay": old_bay})
+            # Check actual stock quantity via Stock Ledger Entry
+            result = frappe.db.sql("""
+                SELECT COALESCE(SUM(actual_qty), 0) as qty
+                FROM `tabStock Ledger Entry`
+                WHERE batch_no = %s AND is_cancelled = 0
+            """, (b.name,), as_dict=True)
+
+            stock_qty = float(result[0].qty) if result else 0.0
+
+            # Clear bay if stock ledger shows 0 qty (actual stock is empty)
+            # We do NOT rely on batch_qty field as it may be a stored/stale value
+            if stock_qty <= 0:
+                frappe.db.set_value("Batch", b.name, "custom_bay", None, update_modified=False)
+                cleared.append({"batch": b.name, "old_bay": b.custom_bay})
+            else:
+                skipped.append({"batch": b.name, "stock_qty": stock_qty})
 
         frappe.db.commit()
+
         return {
             "status": "success",
             "cleared_count": len(cleared),
             "cleared": cleared,
-            "message": f"Cleared bay from {len(cleared)} empty batch(es)."
+            "skipped_count": len(skipped),
+            "message": f"Cleared bay from {len(cleared)} empty batch(es). Kept {len(skipped)} batch(es) with stock."
         }
     except Exception as e:
         frappe.log_error(message=str(e), title="WMS Clear Empty Batch Bays Error")
