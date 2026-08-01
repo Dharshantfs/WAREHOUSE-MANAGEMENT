@@ -135,12 +135,12 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                                 args: {
                                     doctype: 'Batch',
                                     filters: [
-                                        ['name', 'like', \`%\${val}%\`]
+                                        ['name', 'like', `%${val}%`]
                                     ],
                                     or_filters: [
-                                        ['custom_order_code', 'like', \`%\${val}%\`],
-                                        ['custom_party_code_text', 'like', \`%\${val}%\`],
-                                        ['custom_order', 'like', \`%\${val}%\`]
+                                        ['custom_order_code', 'like', `%${val}%`],
+                                        ['custom_party_code_text', 'like', `%${val}%`],
+                                        ['custom_order', 'like', `%${val}%`]
                                     ],
                                     fields: ['name', 'item_name', 'custom_order_code', 'custom_bay', 'batch_qty', 'stock_uom'],
                                     limit_page_length: 500
@@ -191,10 +191,10 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         container.id = 'injected-order-table-container';
         container.className = 'injected-table-container';
         
-        let html = \`
+        let html = `
             <div style="padding: 1rem 1.25rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: white;">
                 <div>
-                    <h3 style="margin: 0; font-size: 1.125rem; font-weight: 600; color: #0f172a;">Found \${batches.length} Rolls</h3>
+                    <h3 style="margin: 0; font-size: 1.125rem; font-weight: 600; color: #0f172a;">Found ${batches.length} Rolls</h3>
                     <p style="margin: 0; margin-top: 0.25rem; font-size: 0.875rem; color: #64748b;">Multiple rolls match this order code or prefix</p>
                 </div>
             </div>
@@ -209,25 +209,25 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                     </tr>
                 </thead>
                 <tbody>
-        \`;
+        `;
         
         batches.forEach(b => {
             let bay = b.custom_bay || 'Unassigned';
-            html += \`
+            html += `
                 <tr>
-                    <td style="font-weight: 600; color: #2563eb;">\${b.name}</td>
-                    <td style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="\${b.item_name || ''}">\${b.item_name || '-'}</td>
-                    <td style="color: #64748b; font-weight: 500;">\${b.custom_order_code || '-'}</td>
-                    <td style="font-weight: 600; color: #0f172a;">\${(b.batch_qty || 0).toFixed(2)} <span style="font-size:0.75rem;color:#94a3b8;font-weight:normal;">\${b.stock_uom || 'kg'}</span></td>
-                    <td><span class="injected-bay-badge">\${bay}</span></td>
+                    <td style="font-weight: 600; color: #2563eb;">${b.name}</td>
+                    <td style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${b.item_name || ''}">${b.item_name || '-'}</td>
+                    <td style="color: #64748b; font-weight: 500;">${b.custom_order_code || '-'}</td>
+                    <td style="font-weight: 600; color: #0f172a;">${(b.batch_qty || 0).toFixed(2)} <span style="font-size:0.75rem;color:#94a3b8;font-weight:normal;">${b.stock_uom || 'kg'}</span></td>
+                    <td><span class="injected-bay-badge">${bay}</span></td>
                 </tr>
-            \`;
+            `;
         });
         
-        html += \`
+        html += `
                 </tbody>
             </table>
-        \`;
+        `;
         
         container.innerHTML = html;
         mainBlock.parentNode.appendChild(container);
