@@ -60,9 +60,10 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                 // Add the Camera Button next to the input
                 let btn = doc.createElement('button');
                 btn.className = 'injected-scan-btn';
+                btn.style.marginLeft = '10px'; // Add margin to separate from React button
                 btn.innerHTML = `
                     <svg style="width:16px;height:16px;margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    Camera Scanner
+                    Camera
                 `;
                 
                 // Determine the layout and inject the button nicely
@@ -71,7 +72,8 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                 inputContainer.style.alignItems = 'center';
                 
                 if (input.nextSibling) {
-                    inputContainer.insertBefore(btn, input.nextSibling);
+                    // Try to place it after the parent's button if the React app has its own button
+                    inputContainer.appendChild(btn);
                 } else {
                     inputContainer.appendChild(btn);
                 }
@@ -138,11 +140,9 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                                         ['name', 'like', `%${val}%`]
                                     ],
                                     or_filters: [
-                                        ['custom_order_code', 'like', `%${val}%`],
-                                        ['custom_party_code_text', 'like', `%${val}%`],
-                                        ['custom_order', 'like', `%${val}%`]
+                                        ['custom_party_code_text', 'like', `%${val}%`]
                                     ],
-                                    fields: ['name', 'item_name', 'custom_order_code', 'custom_bay', 'batch_qty', 'stock_uom'],
+                                    fields: ['name', 'item_name', 'custom_party_code_text', 'custom_bay', 'batch_qty', 'stock_uom'],
                                     limit_page_length: 500
                                 },
                                 callback: function(r) {
@@ -217,7 +217,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                 <tr>
                     <td style="font-weight: 600; color: #2563eb;">${b.name}</td>
                     <td style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${b.item_name || ''}">${b.item_name || '-'}</td>
-                    <td style="color: #64748b; font-weight: 500;">${b.custom_order_code || '-'}</td>
+                    <td style="color: #64748b; font-weight: 500;">${b.custom_party_code_text || '-'}</td>
                     <td style="font-weight: 600; color: #0f172a;">${(b.batch_qty || 0).toFixed(2)} <span style="font-size:0.75rem;color:#94a3b8;font-weight:normal;">${b.stock_uom || 'kg'}</span></td>
                     <td><span class="injected-bay-badge">${bay}</span></td>
                 </tr>
