@@ -14,6 +14,37 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 		></iframe>
 	`);
 
+	// ── Add action buttons to the Frappe page toolbar ──
+	page.add_inner_button('🧹 Clear Empty Bay Data', function() {
+		frappe.confirm(
+			'This will remove bay assignments from ALL batches with 0 Kg stock. This keeps the 3D view and scanner clean. Are you sure?',
+			function() {
+				frappe.show_progress('Clearing empty bays...', 0, 100, 'Please wait...');
+				frappe.call({
+					method: 'warehouse_management.api.stock_api.clear_empty_batch_bays',
+					callback: function(r) {
+						frappe.hide_progress();
+						if (r.message && r.message.status === 'success') {
+							frappe.show_alert({
+								message: `✅ ${r.message.message}`,
+								indicator: 'green'
+							}, 6);
+							// Reload the iframe to reflect changes
+							let iframe = document.getElementById('wms-react-iframe');
+							if (iframe) iframe.src = iframe.src;
+						} else {
+							frappe.msgprint({
+								title: 'Error',
+								indicator: 'red',
+								message: r.message ? r.message.message : 'Unknown error occurred.'
+							});
+						}
+					}
+				});
+			}
+		);
+	}).addClass('btn-danger');
+
     let iframe = document.getElementById('wms-react-iframe');
     
     iframe.onload = function() {
