@@ -97,18 +97,18 @@ def get_bay_details(bay_name):
                 filters=[
                     ["custom_bay", "is", "not set"]
                 ],
-                fields=["name", "custom_order_code", "manufacturing_date", "expiry_date"]
+                fields=["name", "custom_order_code", "custom_party_code_text", "manufacturing_date", "expiry_date"]
             )
         else:
             batches = frappe.get_all(
                 "Batch",
                 filters={"custom_bay": bay_name},
-                fields=["name", "custom_order_code", "manufacturing_date", "expiry_date"]
+                fields=["name", "custom_order_code", "custom_party_code_text", "manufacturing_date", "expiry_date"]
             )
         
         grouped = {}
         for batch in batches:
-            order_code = batch.custom_order_code or "UNASSIGNED"
+            order_code = batch.get("custom_party_code_text") or batch.get("custom_order_code") or "UNASSIGNED"
             qty = get_batch_qty(batch.name)
             
             if order_code not in grouped:
@@ -269,3 +269,40 @@ def update_batch_bay(batch_ids=None, target_bay=None, new_bay=None,
         "skipped"    : skipped,
     }
 
+
+@frappe.whitelist()
+def clear_empty_batch_bays():
+    """
+    Automatically removes the bay assignment from batches that have 0 or negative
+    stock quantity. This cleans up the 3D view from stale empty roll allocations.
+
+    Returns how many batches were cleared.
+    """
+    try:
+        # Get all batches that have a bay assigned
+        batches_with_bay = frappe.get_all(
+            "Batch",
+            filters=[["custom_bay", "is", "set"]],
+            fields=["name", "custom_bay"]
+        )
+
+        cleared = []
+        for b in batches_with_bay:
+            qty = get_batch_qty(b.name)
+            if qty <= 0:
+                doc = frappe.get_doc("Batch", b.name)
+                old_bay = doc.custom_bay
+                doc.custom_bay = None
+                doc.save(ignore_permissions=True)
+                cleared.append({"batch": b.name, "old_bay": old_bay})
+
+        frappe.db.commit()
+        return {
+            "status": "success",
+            "cleared_count": len(cleared),
+            "cleared": cleared,
+            "message": f"Cleared bay from {len(cleared)} empty batch(es)."
+        }
+    except Exception as e:
+        frappe.log_error(message=str(e), title="WMS Clear Empty Batch Bays Error")
+        return {"status": "error", "message": str(e)}

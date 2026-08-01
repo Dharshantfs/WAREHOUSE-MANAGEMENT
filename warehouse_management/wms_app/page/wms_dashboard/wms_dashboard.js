@@ -49,6 +49,10 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             .injected-modal { background: white; padding: 1.5rem; border-radius: 0.75rem; width: 450px; max-width: 90%; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); }
             #injected-reader { width: 100%; border: none !important; }
             #injected-reader img { display: none; }
+            /* Hide React's Scan Failed card when our order code table is showing */
+            #injected-order-table-container ~ * .text-red-600,
+            #injected-order-table-container ~ * [class*="scan-failed"],
+            #injected-order-table-container ~ * [class*="error"] { display: none !important; }
         `;
         doc.head.appendChild(style);
 
@@ -227,5 +231,16 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         
         container.innerHTML = html;
         mainBlock.parentNode.appendChild(container);
+        
+        // Actively hide React's "Scan Failed" error card if it appears
+        setTimeout(() => {
+            // React renders error cards with red background - find and hide them
+            doc.querySelectorAll('[class*="bg-red"], [class*="border-red"]').forEach(el => {
+                if (el.textContent && el.textContent.includes('Scan Failed')) {
+                    el.style.display = 'none';
+                    el.id = 'react-scan-failed-hidden';
+                }
+            });
+        }, 300);
     }
 }
