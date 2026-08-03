@@ -110,7 +110,7 @@
                 <th>NAME</th>
                 <th>JAYASHREE [ KGS ]</th>
                 <th>THUSMAA [ KGS ]</th>
-                <th>TOTAL</th>
+                <th>TOTAL [ KGS ]</th>
             </tr>
         </thead>
         <tbody>
@@ -125,9 +125,9 @@
                     <tr class="total-row">
                         <td></td>
                         <td>TOTAL</td>
-                        <td>{%= parseFloat(row.jayashree_live || 0).toFixed(2) %}</td>
-                        <td>{%= parseFloat(row.thusmaa_live || 0).toFixed(2) %}</td>
-                        <td>{%= parseFloat(row.total_live || 0).toFixed(2) %}</td>
+                        <td>{%= parseFloat(row.jayashree_live || 0).toFixed(2) %} KGS</td>
+                        <td>{%= parseFloat(row.thusmaa_live || 0).toFixed(2) %} KGS</td>
+                        <td>{%= parseFloat(row.total_live || 0).toFixed(2) %} KGS</td>
                     </tr>
                 {% } else if (row.s_no) { %}
                     <tr>
