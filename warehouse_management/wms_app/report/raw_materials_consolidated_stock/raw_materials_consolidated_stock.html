@@ -1,0 +1,170 @@
+<style>
+    .report-wrapper {
+        font-family: Arial, sans-serif;
+        width: 100%;
+        margin: 0 auto;
+    }
+    .header-box {
+        background-color: #c9dfaf;
+        border: 2px solid #000;
+        text-align: center;
+        padding: 10px;
+        margin-bottom: 0;
+    }
+    .header-box h1 {
+        color: #006400;
+        margin: 0;
+        font-size: 32px;
+        font-weight: 900;
+        font-style: italic;
+        letter-spacing: 2px;
+    }
+    .header-box h2 {
+        color: #006400;
+        margin: -5px 0 5px 0;
+        font-size: 20px;
+        font-weight: 900;
+        font-style: italic;
+        letter-spacing: 5px;
+    }
+    .header-box p {
+        color: #a52a2a;
+        margin: 2px;
+        font-size: 14px;
+        font-weight: bold;
+    }
+    
+    .subheader-box {
+        background-color: #92bce8;
+        border: 2px solid #000;
+        border-top: none;
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 20px;
+        font-weight: bold;
+        font-size: 16px;
+    }
+    
+    table.custom-report-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 2px solid #000;
+        margin-top: 0;
+        font-size: 12px;
+    }
+    
+    table.custom-report-table th, table.custom-report-table td {
+        border: 1px solid #000;
+        padding: 5px 8px;
+        text-align: center;
+    }
+    
+    table.custom-report-table th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+    }
+    
+    .section-header {
+        background-color: #a5d6a7 !important;
+        font-weight: bold;
+        text-align: center !important;
+        text-transform: uppercase;
+    }
+    
+    .total-row {
+        background-color: #fff9c4 !important;
+        font-weight: bold;
+    }
+    
+    .footer-signatures {
+        margin-top: 40px;
+        display: flex;
+        justify-content: space-between;
+        font-weight: bold;
+        font-size: 12px;
+        text-align: center;
+        border: 2px solid #000;
+        padding: 30px 20px 20px 20px;
+    }
+    
+</style>
+
+<div class="report-wrapper">
+    <div class="header-box">
+        <!-- Optional: You can place the actual logo image tag here -->
+        <h1>JAYASHREE</h1>
+        <h2>SPUN BOND</h2>
+        <p>Mfrs. of Non Woven Fabrics & Products</p>
+        <p>(A Govt. of India Recognised ★ Star Export House)</p>
+    </div>
+    
+    <div class="subheader-box">
+        <div>RAW MATERIALS - CONSOLIDATED STOCK</div>
+        <div>DATE &nbsp;&nbsp;&nbsp;&nbsp; {{ frappe.format(filters.date, {'fieldtype': 'Date'}) }}</div>
+    </div>
+    
+    <table class="custom-report-table">
+        <thead>
+            <tr>
+                <th rowspan="2">S.NO</th>
+                <th rowspan="2">NAME</th>
+                <th colspan="2">JAYASHREE [ KGS ]</th>
+                <th colspan="2">THUSMAA [ KGS ]</th>
+                <th colspan="2">TOTAL</th>
+            </tr>
+            <tr>
+                <th>YESTERDAY</th>
+                <th>LIVE</th>
+                <th>YESTERDAY</th>
+                <th>LIVE</th>
+                <th>YESTERDAY</th>
+                <th>LIVE</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data %}
+                {% if not row.s_no and "<b>" in (row.name or "") and "TOTAL" not in (row.name or "") %}
+                    <tr>
+                        <td colspan="8" class="section-header">{{ row.name }}</td>
+                    </tr>
+                {% elif "<b>TOTAL</b>" in (row.name or "") %}
+                    <tr class="total-row">
+                        <td></td>
+                        <td>TOTAL</td>
+                        <td>{{ row.jayashree_yest }}</td>
+                        <td>{{ row.jayashree_live }}</td>
+                        <td>{{ row.thusmaa_yest }}</td>
+                        <td>{{ row.thusmaa_live }}</td>
+                        <td>{{ row.total_yest }}</td>
+                        <td>{{ row.total_live }}</td>
+                    </tr>
+                {% elif row.s_no %}
+                    <tr>
+                        <td>{{ row.s_no }}</td>
+                        <td style="text-align: left;">{{ row.name }}</td>
+                        <td>{{ row.jayashree_yest or '0' }}</td>
+                        <td>{{ row.jayashree_live or '0' }}</td>
+                        <td>{{ row.thusmaa_yest or '0' }}</td>
+                        <td>{{ row.thusmaa_live or '0' }}</td>
+                        <td>{{ row.total_yest or '0' }}</td>
+                        <td>{{ row.total_live or '0' }}</td>
+                    </tr>
+                {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div class="footer-signatures">
+        <div>
+            <p>OPERATIONS ADMIN SIGNATURE</p>
+            <p style="margin-top:20px;">M. SELVA GANAPATHI</p>
+        </div>
+        <div>
+            <p>FACTORY ADMIN SIGNATURE</p>
+            <p style="margin-top:20px;">P. PANDIKANNAN</p>
+        </div>
+        <div>
+            <p>MANAGEMENT SIGNATURE</p>
+        </div>
+    </div>
+</div>
