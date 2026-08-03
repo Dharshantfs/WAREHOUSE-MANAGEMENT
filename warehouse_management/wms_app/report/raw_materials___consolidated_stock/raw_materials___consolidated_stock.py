@@ -27,28 +27,28 @@ def get_columns():
     ]
 
 def get_data(date, yesterday):
-    # Warehouses (using LIKE patterns to avoid exact string mismatch)
-    jayashree_wh = "%Raw Material%JSB-1ZT%"
-    thusmaa_wh = "%Raw Material%TSNPL%"
+    jayashree_company = "%jayashree%"
+    thusmaa_company = "%thusma%"
+    wh_pattern = "%Raw Material%"
     
     # Items in Raw Material group
     items = frappe.get_all("Item", filters={"item_group": "Raw Material"}, fields=["name", "item_name"])
     
-    def get_stock(wh_pattern, as_on_date):
+    def get_stock(company_pattern, wh_pattern, as_on_date):
         query = """
             SELECT item_code, sum(actual_qty) as balance_qty
             FROM `tabStock Ledger Entry`
-            WHERE warehouse LIKE %s AND posting_date <= %s
+            WHERE company LIKE %s AND warehouse LIKE %s AND posting_date <= %s
             AND is_cancelled = 0
             GROUP BY item_code
         """
-        result = frappe.db.sql(query, (wh_pattern, as_on_date), as_dict=1)
+        result = frappe.db.sql(query, (company_pattern, wh_pattern, as_on_date), as_dict=1)
         return {r.item_code: flt(r.balance_qty) for r in result}
         
-    jaya_yest_stock = get_stock(jayashree_wh, yesterday)
-    jaya_live_stock = get_stock(jayashree_wh, date)
-    thus_yest_stock = get_stock(thusmaa_wh, yesterday)
-    thus_live_stock = get_stock(thusmaa_wh, date)
+    jaya_yest_stock = get_stock(jayashree_company, wh_pattern, yesterday)
+    jaya_live_stock = get_stock(jayashree_company, wh_pattern, date)
+    thus_yest_stock = get_stock(thusmaa_company, wh_pattern, yesterday)
+    thus_live_stock = get_stock(thusmaa_company, wh_pattern, date)
     
     lamination_items = ["LD SABIC 7019 EC", "PP - SABIC 519A", "PP - RELIANCE LDPE", "PP - SUMITOMO LDPE"]
     
