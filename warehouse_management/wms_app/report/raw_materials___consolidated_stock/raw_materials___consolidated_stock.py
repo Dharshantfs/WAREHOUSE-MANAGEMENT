@@ -51,7 +51,7 @@ def get_data(date, yesterday):
     thus_yest_stock = get_stock(thusmaa_wh, yesterday)
     thus_live_stock = get_stock(thusmaa_wh, date)
     
-    lamination_items = ["LD SABIC 7019 EC", "PP - SABIC 519A", "PP - BASELL HP 462S", "PP - RELIANCE LDPE", "PP - SUMITOMO LDPE"]
+    lamination_items = ["LD SABIC 7019 EC", "PP - SABIC 519A", "PP - RELIANCE LDPE", "PP - SUMITOMO LDPE"]
     
     poly_list = []
     poly_lam_list = []
@@ -61,6 +61,9 @@ def get_data(date, yesterday):
     for item in items:
         item_name = item.item_name or item.name
         code = item.name
+        
+        if "DUMMY" in item_name.upper() or "DUMMY" in code.upper():
+            continue
         
         row = {
             "s_no": "",
@@ -81,7 +84,8 @@ def get_data(date, yesterday):
         elif item_name.startswith("FL-") or item_name.startswith("FL -"):
             filler_list.append(row)
         elif item_name.startswith("SA -") or item_name.startswith("SA-"):
-            ppa_list.append(row)
+            if row["total_yest"] > 0 or row["total_live"] > 0:
+                ppa_list.append(row)
             
     # Compile the final data with sections
     data = []
