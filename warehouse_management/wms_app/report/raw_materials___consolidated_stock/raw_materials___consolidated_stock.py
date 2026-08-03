@@ -105,12 +105,12 @@ def get_data(date, yesterday):
         data.append({
             "s_no": "",
             "name": "<b>TOTAL</b>",
-            "jayashree_yest": f"<b>{sum_jy}</b>",
-            "jayashree_live": f"<b>{sum_jl}</b>",
-            "thusmaa_yest": f"<b>{sum_ty}</b>",
-            "thusmaa_live": f"<b>{sum_tl}</b>",
-            "total_yest": f"<b>{tot_y}</b>",
-            "total_live": f"<b>{tot_l}</b>"
+            "jayashree_yest": sum_jy,
+            "jayashree_live": sum_jl,
+            "thusmaa_yest": sum_ty,
+            "thusmaa_live": sum_tl,
+            "total_yest": tot_y,
+            "total_live": tot_l
         })
         data.append({}) # Empty row
         
