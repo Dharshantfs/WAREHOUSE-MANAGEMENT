@@ -100,7 +100,7 @@
     
     <div class="subheader-box">
         <div>RAW MATERIALS - CONSOLIDATED STOCK</div>
-        <div>DATE &nbsp;&nbsp;&nbsp;&nbsp; {{ frappe.format(filters.date, {'fieldtype': 'Date'}) }}</div>
+        <div>DATE &nbsp;&nbsp;&nbsp;&nbsp; {%= frappe.datetime.str_to_user(filters.date) %}</div>
     </div>
     
     <table class="custom-report-table">
@@ -122,35 +122,37 @@
             </tr>
         </thead>
         <tbody>
-            {% for row in data %}
-                {% if not row.s_no and "<b>" in (row.name or "") and "TOTAL" not in (row.name or "") %}
+            {% for (var i=0, l=data.length; i<l; i++) { 
+                var row = data[i]; 
+            %}
+                {% if (!row.s_no && row.name && row.name.includes("<b>") && !row.name.includes("TOTAL")) { %}
                     <tr>
-                        <td colspan="8" class="section-header">{{ row.name }}</td>
+                        <td colspan="8" class="section-header">{%= row.name %}</td>
                     </tr>
-                {% elif "<b>TOTAL</b>" in (row.name or "") %}
+                {% } else if (row.name && row.name.includes("<b>TOTAL</b>")) { %}
                     <tr class="total-row">
                         <td></td>
                         <td>TOTAL</td>
-                        <td>{{ row.jayashree_yest }}</td>
-                        <td>{{ row.jayashree_live }}</td>
-                        <td>{{ row.thusmaa_yest }}</td>
-                        <td>{{ row.thusmaa_live }}</td>
-                        <td>{{ row.total_yest }}</td>
-                        <td>{{ row.total_live }}</td>
+                        <td>{%= row.jayashree_yest %}</td>
+                        <td>{%= row.jayashree_live %}</td>
+                        <td>{%= row.thusmaa_yest %}</td>
+                        <td>{%= row.thusmaa_live %}</td>
+                        <td>{%= row.total_yest %}</td>
+                        <td>{%= row.total_live %}</td>
                     </tr>
-                {% elif row.s_no %}
+                {% } else if (row.s_no) { %}
                     <tr>
-                        <td>{{ row.s_no }}</td>
-                        <td style="text-align: left;">{{ row.name }}</td>
-                        <td>{{ row.jayashree_yest or '0' }}</td>
-                        <td>{{ row.jayashree_live or '0' }}</td>
-                        <td>{{ row.thusmaa_yest or '0' }}</td>
-                        <td>{{ row.thusmaa_live or '0' }}</td>
-                        <td>{{ row.total_yest or '0' }}</td>
-                        <td>{{ row.total_live or '0' }}</td>
+                        <td>{%= row.s_no %}</td>
+                        <td style="text-align: left;">{%= row.name %}</td>
+                        <td>{%= row.jayashree_yest || '0' %}</td>
+                        <td>{%= row.jayashree_live || '0' %}</td>
+                        <td>{%= row.thusmaa_yest || '0' %}</td>
+                        <td>{%= row.thusmaa_live || '0' %}</td>
+                        <td>{%= row.total_yest || '0' %}</td>
+                        <td>{%= row.total_live || '0' %}</td>
                     </tr>
-                {% endif %}
-            {% endfor %}
+                {% } %}
+            {% } %}
         </tbody>
     </table>
     
