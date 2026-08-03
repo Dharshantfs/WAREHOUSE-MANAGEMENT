@@ -98,12 +98,12 @@ def get_data(date, yesterday):
         for idx, r in enumerate(rows, 1):
             r["s_no"] = str(idx)
             data.append(r)
-            sum_jy += r["jayashree_yest"]
-            sum_jl += r["jayashree_live"]
-            sum_ty += r["thusmaa_yest"]
-            sum_tl += r["thusmaa_live"]
-            tot_y += r["total_yest"]
-            tot_l += r["total_live"]
+            sum_jy = round(sum_jy + r["jayashree_yest"], 2)
+            sum_jl = round(sum_jl + r["jayashree_live"], 2)
+            sum_ty = round(sum_ty + r["thusmaa_yest"], 2)
+            sum_tl = round(sum_tl + r["thusmaa_live"], 2)
+            tot_y = round(tot_y + r["total_yest"], 2)
+            tot_l = round(tot_l + r["total_live"], 2)
             
         # Add total row
         data.append({
