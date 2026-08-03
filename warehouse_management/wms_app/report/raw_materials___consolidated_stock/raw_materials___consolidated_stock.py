@@ -27,8 +27,8 @@ def get_columns():
     ]
 
 def get_data(date, yesterday):
-    jayashree_company = "%jayashree%"
-    thusmaa_company = "%thusma%"
+    jayashree_company = "Jayashree Spun Bond - 1ZT"
+    thusmaa_company = "Thusma SMS Nonwovens Private Limited - 1Z0"
     wh_pattern = "%Raw Material%"
     
     # Items in Raw Material group
