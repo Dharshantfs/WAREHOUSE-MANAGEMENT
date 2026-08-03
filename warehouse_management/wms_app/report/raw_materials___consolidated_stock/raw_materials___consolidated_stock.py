@@ -36,22 +36,14 @@ def get_data(date, yesterday):
     
     # Get stock balances up to 'yesterday' and 'date' (live)
     def get_stock(wh, as_on_date):
-        # We query Stock Ledger Entry grouped by item_code to get the balance_qty
-        # Since we just want the latest balance_qty on or before the date
         query = """
-            SELECT item_code, balance_qty
-            FROM `tabStock Ledger Entry` sle
+            SELECT item_code, sum(actual_qty) as balance_qty
+            FROM `tabStock Ledger Entry`
             WHERE warehouse = %s AND posting_date <= %s
-            AND creation = (
-                SELECT MAX(creation)
-                FROM `tabStock Ledger Entry` sle2
-                WHERE sle2.item_code = sle.item_code
-                AND sle2.warehouse = sle.warehouse
-                AND sle2.posting_date <= %s
-            )
-            AND docstatus = 1
+            AND is_cancelled = 0
+            GROUP BY item_code
         """
-        result = frappe.db.sql(query, (wh, as_on_date, as_on_date), as_dict=1)
+        result = frappe.db.sql(query, (wh, as_on_date), as_dict=1)
         return {r.item_code: flt(r.balance_qty) for r in result}
         
     jaya_yest_stock = get_stock(jayashree_wh, yesterday)
