@@ -83,7 +83,9 @@ def get_data(date, yesterday):
         elif item_name.startswith("FL-") or item_name.startswith("FL -"):
             filler_list.append(row)
         elif item_name.startswith("SA -") or item_name.startswith("SA-"):
-            if row["total_yest"] > 0 or row["total_live"] > 0:
+            if item_name == "SA - WELLSET UV":
+                pass
+            elif row["total_yest"] > 0 or row["total_live"] > 0:
                 ppa_list.append(row)
             
     # Compile the final data with sections
