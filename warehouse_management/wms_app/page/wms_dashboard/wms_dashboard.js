@@ -3,7 +3,8 @@ window.assignBay = function(batch_name) {
 		{
 			label: 'New Bay Location',
 			fieldname: 'new_bay',
-			fieldtype: 'Data',
+			fieldtype: 'Link',
+			options: 'Warehouse Bay',
 			reqd: 1
 		}
 	], function(values){
