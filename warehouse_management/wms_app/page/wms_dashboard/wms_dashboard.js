@@ -1,3 +1,37 @@
+window.assignBay = function(batch_name) {
+	frappe.prompt([
+		{
+			label: 'New Bay Location',
+			fieldname: 'new_bay',
+			fieldtype: 'Data',
+			reqd: 1
+		}
+	], function(values){
+		frappe.call({
+			method: 'warehouse_management.api.stock_api.update_batch_bay',
+			args: {
+				batch_no: batch_name,
+				new_bay: values.new_bay
+			},
+			callback: function(r) {
+				if (r.message && r.message.status === 'success') {
+					frappe.show_alert({message: 'Bay updated successfully!', indicator: 'green'});
+					let iframe = document.getElementById('wms-react-iframe');
+					let doc = iframe.contentDocument || iframe.contentWindow.document;
+					let badge = doc.getElementById('bay-badge-' + batch_name);
+					if(badge) badge.innerText = values.new_bay;
+				} else {
+                    frappe.msgprint({
+                        title: 'Error',
+                        indicator: 'red',
+                        message: r.message ? r.message.message : 'Unknown error occurred.'
+                    });
+                }
+			}
+		});
+	}, 'Assign Bay for ' + batch_name, 'Update');
+};
+
 frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -250,7 +284,10 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                     <td style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${b.item_name || ''}">${b.item_name || '-'}</td>
                     <td style="color: #64748b; font-weight: 500;">${b.custom_party_code_text || '-'}</td>
                     <td style="font-weight: 600; color: #0f172a;">${(b.batch_qty || 0).toFixed(2)} <span style="font-size:0.75rem;color:#94a3b8;font-weight:normal;">${b.stock_uom || 'kg'}</span></td>
-                    <td><span class="injected-bay-badge">${bay}</span></td>
+                    <td style="display: flex; align-items: center; gap: 8px;">
+                        <span class="injected-bay-badge" id="bay-badge-${b.name}">${bay}</span>
+                        <button class="injected-assign-btn" onclick="window.parent.assignBay('${b.name}')" style="font-size:0.75rem;padding:2px 8px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;color:#334155;font-weight:500;">✏️ Assign</button>
+                    </td>
                 </tr>
             `;
         });
