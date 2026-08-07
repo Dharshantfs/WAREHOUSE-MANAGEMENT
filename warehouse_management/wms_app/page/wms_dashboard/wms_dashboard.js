@@ -71,34 +71,56 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 							<div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; max-width: 600px;">
 								<h3 style="margin-top:0; font-size: 1.2rem; color: #0f172a;">${item.item_name}</h3>
 								<p style="color: #64748b; font-size: 0.9rem; margin-bottom: 20px;">${item.item_code} | Total: ${item.kgs} kg (${item.bags} bags)</p>
-								<div style="display: flex; gap: 30px; flex-wrap: wrap; justify-content: flex-start;">
+								<div style="display: flex; gap: 40px; flex-wrap: wrap; justify-content: flex-start;">
 						`;
 						
-						let remainingBags = item.bags;
+						let remainingBags = Math.floor(item.bags); // We draw whole bags
+						// If the float has a fraction, we draw the floor, but text shows actual
+						let totalDrawn = 0;
 						let palletCount = 0;
 						
-						while (remainingBags > 0) {
+						while (remainingBags > 0 || (palletCount === 0 && item.bags > 0)) {
 							palletCount++;
 							let bagsInThisPallet = Math.min(remainingBags, 50);
+                            if (bagsInThisPallet === 0 && item.bags > 0 && item.bags < 1) bagsInThisPallet = 1; // Draw at least 1 bag if < 1
 							remainingBags -= bagsInThisPallet;
+                            totalDrawn += bagsInThisPallet;
+                            
+                            let displayBagsCount = bagsInThisPallet;
+                            if (remainingBags <= 0 && item.bags % 1 !== 0) {
+                                // For the last pallet, show the exact decimal value text
+                                let lastPalletValue = item.bags - ((palletCount - 1) * 50);
+                                displayBagsCount = lastPalletValue.toFixed(3);
+                            }
 							
 							html += `
 								<div style="text-align: center;">
-									<div class="rm-pallet-container">
+									<div class="rm-pallet-container" title="Pallet ${palletCount} | ${displayBagsCount} bags">
 										<div class="rm-pallet-base"></div>
 							`;
 							
-							for (let i = 0; i < bagsInThisPallet; i++) {
-								let x = (i % 10) * 16;
-								let z = Math.floor(i / 10) * 10;
-								let offsetX = (Math.random() - 0.5) * 1.5;
-								let offsetY = (Math.random() - 0.5) * 1.5;
-								html += `<div class="rm-bag" style="transform: translate3d(${x + offsetX}px, ${offsetY}px, ${z}px);"></div>`;
-							}
+                            // Render base level first (Z), then Y (back to front), then X (left to right)
+                            let drawnCount = 0;
+                            for (let z_level = 0; z_level < 5; z_level++) {
+                                for (let y_idx = 0; y_idx < 2; y_idx++) {
+                                    for (let x_idx = 0; x_idx < 5; x_idx++) {
+                                        if (drawnCount >= bagsInThisPallet) break;
+                                        
+                                        let x = x_idx * 22;
+                                        let y = y_idx * -36;
+                                        let z = z_level * 10;
+                                        
+                                        let offsetX = (Math.random() - 0.5) * 1.5;
+                                        let offsetY = (Math.random() - 0.5) * 1.5;
+                                        html += `<div class="rm-bag" style="transform: translate3d(${x + offsetX}px, ${y + offsetY}px, ${z}px);"></div>`;
+                                        drawnCount++;
+                                    }
+                                }
+                            }
 							
 							html += `
 									</div>
-									<div style="margin-top: 10px; font-size: 0.8rem; font-weight: 600; color: #475569;">Pallet ${palletCount} <br> (${bagsInThisPallet} bags)</div>
+									<div style="margin-top: 10px; font-size: 0.8rem; font-weight: 600; color: #475569;">Pallet ${palletCount} <br> (${displayBagsCount} bags)</div>
 								</div>
 							`;
 						}
@@ -116,20 +138,24 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 							.rm-pallet-container {
 								perspective: 1500px;
 								transform-style: preserve-3d;
-								width: 200px;
-								height: 180px;
+								width: 140px;
+								height: 140px;
 								position: relative;
 								transform: rotateX(60deg) rotateZ(-30deg) scale(0.9);
-								margin-top: -20px;
+                                cursor: pointer;
+                                transition: transform 0.2s;
 							}
+                            .rm-pallet-container:hover {
+                                transform: rotateX(60deg) rotateZ(-30deg) scale(0.95) translateZ(10px);
+                            }
 							.rm-pallet-base {
 								position: absolute;
-								width: 170px;
-								height: 35px;
+								width: 120px;
+								height: 75px;
 								background: #d4a373;
 								border: 2px solid #b5835a;
 								border-radius: 2px;
-								transform: translate3d(-5px, 0, -2px);
+								transform: translate3d(-5px, -38px, -2px);
 								box-shadow: 15px 15px 15px rgba(0,0,0,0.2);
 							}
 							.rm-pallet-base::before {
@@ -156,8 +182,8 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 							}
 							.rm-bag {
 								position: absolute;
-								width: 16px;
-								height: 28px;
+								width: 20px;
+								height: 34px;
 								background: #f8fafc;
 								border: 1px solid #cbd5e1;
 								border-radius: 3px;

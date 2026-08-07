@@ -341,7 +341,7 @@ def get_rm_stock():
         results = []
         for b in bins:
             qty = float(b.actual_qty or 0)
-            bags = int(qty // 25)
+            bags = qty / 25.0
             
             # Fetch item name for better display
             item_name = frappe.db.get_value("Item", b.item_code, "item_name") or b.item_code
@@ -350,7 +350,7 @@ def get_rm_stock():
                 "item_code": b.item_code,
                 "item_name": item_name,
                 "kgs": qty,
-                "bags": bags
+                "bags": round(bags, 3)
             })
             
         # Sort alphabetically
