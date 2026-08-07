@@ -319,3 +319,44 @@ def clear_empty_batch_bays():
     except Exception as e:
         frappe.log_error(message=str(e), title="WMS Clear Empty Batch Bays Error")
         return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def get_rm_stock():
+    """
+    Fetch stock for Raw Materials items starting with 'PP' in a specific warehouse.
+    Calculates the number of 25kg bags (actual_qty // 25) for the new 3D view.
+    """
+    try:
+        warehouse = "Raw Materials - JSB-1ZT"
+        
+        # Query bin for PP items in this warehouse
+        bins = frappe.db.sql("""
+            SELECT item_code, actual_qty 
+            FROM `tabBin` 
+            WHERE warehouse = %s 
+              AND item_code LIKE 'PP%%' 
+              AND actual_qty > 0
+        """, (warehouse,), as_dict=True)
+        
+        results = []
+        for b in bins:
+            qty = float(b.actual_qty or 0)
+            bags = int(qty // 25)
+            
+            # Fetch item name for better display
+            item_name = frappe.db.get_value("Item", b.item_code, "item_name") or b.item_code
+            
+            results.append({
+                "item_code": b.item_code,
+                "item_name": item_name,
+                "kgs": qty,
+                "bags": bags
+            })
+            
+        # Sort alphabetically
+        results.sort(key=lambda x: x["item_code"])
+            
+        return {"status": "success", "data": results}
+    except Exception as e:
+        frappe.log_error(message=str(e), title="WMS Get RM Stock Error")
+        return {"status": "error", "message": str(e)}

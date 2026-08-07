@@ -40,16 +40,185 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 		single_column: true
 	});
 
-	// Embed the React app via iframe
+	// Embed the React app via iframe and RM container
 	$(page.main).html(`
 		<iframe 
             id="wms-react-iframe"
 			src="/wms/index.html" 
 			style="width: 100%; height: 85vh; border: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"
 		></iframe>
+        <div id="wms-rm-view-container" style="display:none; width: 100%; height: 85vh; background: #f8fafc; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 20px; overflow-y: auto;">
+            <div style="text-align: center; color: #64748b; margin-top: 50px;">Loading Raw Materials...</div>
+        </div>
 	`);
 
+    function renderRMView(container) {
+		container.innerHTML = '<div style="text-align: center; color: #64748b; margin-top: 50px;">Loading Raw Materials...</div>';
+		frappe.call({
+			method: 'warehouse_management.api.stock_api.get_rm_stock',
+			callback: function(r) {
+				if (r.message && r.message.status === 'success') {
+					let data = r.message.data;
+					if (data.length === 0) {
+						container.innerHTML = '<div style="text-align: center; color: #64748b; margin-top: 50px;">No Raw Materials found.</div>';
+						return;
+					}
+					
+					let html = '<div style="display: flex; flex-wrap: wrap; gap: 40px; padding: 20px;">';
+					
+					data.forEach(item => {
+						html += `
+							<div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; max-width: 600px;">
+								<h3 style="margin-top:0; font-size: 1.2rem; color: #0f172a;">${item.item_name}</h3>
+								<p style="color: #64748b; font-size: 0.9rem; margin-bottom: 20px;">${item.item_code} | Total: ${item.kgs} kg (${item.bags} bags)</p>
+								<div style="display: flex; gap: 30px; flex-wrap: wrap; justify-content: flex-start;">
+						`;
+						
+						let remainingBags = item.bags;
+						let palletCount = 0;
+						
+						while (remainingBags > 0) {
+							palletCount++;
+							let bagsInThisPallet = Math.min(remainingBags, 50);
+							remainingBags -= bagsInThisPallet;
+							
+							html += `
+								<div style="text-align: center;">
+									<div class="rm-pallet-container">
+										<div class="rm-pallet-base"></div>
+							`;
+							
+							for (let i = 0; i < bagsInThisPallet; i++) {
+								let x = (i % 10) * 16;
+								let z = Math.floor(i / 10) * 10;
+								let offsetX = (Math.random() - 0.5) * 1.5;
+								let offsetY = (Math.random() - 0.5) * 1.5;
+								html += `<div class="rm-bag" style="transform: translate3d(${x + offsetX}px, ${offsetY}px, ${z}px);"></div>`;
+							}
+							
+							html += `
+									</div>
+									<div style="margin-top: 10px; font-size: 0.8rem; font-weight: 600; color: #475569;">Pallet ${palletCount} <br> (${bagsInThisPallet} bags)</div>
+								</div>
+							`;
+						}
+						
+						html += `
+								</div>
+							</div>
+						`;
+					});
+					
+					html += '</div>';
+					
+					html += `
+						<style>
+							.rm-pallet-container {
+								perspective: 1500px;
+								transform-style: preserve-3d;
+								width: 200px;
+								height: 180px;
+								position: relative;
+								transform: rotateX(60deg) rotateZ(-30deg) scale(0.9);
+								margin-top: -20px;
+							}
+							.rm-pallet-base {
+								position: absolute;
+								width: 170px;
+								height: 35px;
+								background: #d4a373;
+								border: 2px solid #b5835a;
+								border-radius: 2px;
+								transform: translate3d(-5px, 0, -2px);
+								box-shadow: 15px 15px 15px rgba(0,0,0,0.2);
+							}
+							.rm-pallet-base::before {
+								content: "";
+								position: absolute;
+								width: 100%;
+								height: 8px;
+								background: #bc8f5f;
+								bottom: -10px;
+								left: -2px;
+								transform: rotateX(-90deg);
+								transform-origin: bottom;
+							}
+							.rm-pallet-base::after {
+								content: "";
+								position: absolute;
+								height: 100%;
+								width: 8px;
+								background: #9b7247;
+								right: -10px;
+								top: -2px;
+								transform: rotateY(90deg);
+								transform-origin: right;
+							}
+							.rm-bag {
+								position: absolute;
+								width: 16px;
+								height: 28px;
+								background: #f8fafc;
+								border: 1px solid #cbd5e1;
+								border-radius: 3px;
+								box-shadow: inset -1px -1px 3px rgba(0,0,0,0.1), 1px 1px 2px rgba(0,0,0,0.1);
+								transform-style: preserve-3d;
+							}
+							.rm-bag::before {
+								content: "";
+								position: absolute;
+								width: 100%;
+								height: 10px;
+								background: #e2e8f0;
+								bottom: 100%;
+								left: -1px;
+								transform: rotateX(90deg);
+								transform-origin: bottom;
+								border: 1px solid #cbd5e1;
+								border-radius: 2px;
+							}
+							.rm-bag::after {
+								content: "";
+								position: absolute;
+								height: 100%;
+								width: 10px;
+								background: #f1f5f9;
+								left: 100%;
+								top: -1px;
+								transform: rotateY(90deg);
+								transform-origin: left;
+								border: 1px solid #cbd5e1;
+								border-radius: 2px;
+							}
+						</style>
+					`;
+					
+					container.innerHTML = html;
+				} else {
+					container.innerHTML = '<div style="text-align: center; color: #ef4444; margin-top: 50px;">Error loading data.</div>';
+				}
+			}
+		});
+	}
+
 	// ── Add action buttons to the Frappe page toolbar ──
+	let currentView = 'FG';
+	let rmButton = page.add_inner_button('🏭 Switch to RM View', function() {
+		if (currentView === 'FG') {
+			currentView = 'RM';
+			$(this).html('🏭 Switch to FG View');
+			document.getElementById('wms-react-iframe').style.display = 'none';
+			let rmContainer = document.getElementById('wms-rm-view-container');
+			rmContainer.style.display = 'block';
+			renderRMView(rmContainer);
+		} else {
+			currentView = 'FG';
+			$(this).html('🏭 Switch to RM View');
+			document.getElementById('wms-react-iframe').style.display = 'block';
+			document.getElementById('wms-rm-view-container').style.display = 'none';
+		}
+	}).addClass('btn-primary');
+
 	page.add_inner_button('🧹 Clear Empty Bay Data', function() {
 		frappe.confirm(
 			'This will remove bay assignments from ALL batches with 0 Kg stock. This keeps the 3D view and scanner clean. Are you sure?',
