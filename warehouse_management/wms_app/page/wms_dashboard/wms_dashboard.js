@@ -103,7 +103,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         // ── Group items by prefix (PP / FL / OTHER) ──
         const PREFIX_META = {
             'PP': { label: 'PP — Polypropylene',  grad: 'linear-gradient(135deg,#1e3a5f,#0f2744)', accent: '#38bdf8' },
-            'FL': { label: 'FL — Flexible',        grad: 'linear-gradient(135deg,#1a3a2a,#0d2418)', accent: '#34d399' },
+            'FL': { label: 'FL — Filler',          grad: 'linear-gradient(135deg,#1a3a2a,#0d2418)', accent: '#34d399' },
             'OTHER': { label: 'Other Materials',    grad: 'linear-gradient(135deg,#2d1b00,#1a1000)', accent: '#fbbf24' }
         };
         function getPrefix(item) {
@@ -249,32 +249,22 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         const prefix = iname.startsWith('FL') ? 'FL' : iname.startsWith('PP') ? 'PP' : 'OTHER';
         const isFL   = prefix === 'FL';
 
-        // FL: 6 wide × 1 deep per layer × 10 layers = 60 bags/pallet
-        // PP/FX/OTHER: 5 wide × 2 deep per layer × 5 layers = 50 bags/pallet
+        // FL: 5 wide × 2 deep × 6 layers = 60 bags/pallet
+        // PP/OTHER: 5 wide × 2 deep × 5 layers = 50 bags/pallet
         const BAGS_PER_PALLET = isFL ? 60 : 50;
-        const LAYERS_MAX      = isFL ? 10 : 5;
+        const LAYERS_MAX      = isFL ? 6 : 5;
         const PALLETS_PER_ROW = 5;
 
         // Pallet fixed at 60 × 4 × 50 for all types
         const PALLET_W = 60, PALLET_H = 4, PALLET_D = 50;
 
-        // Bag dimensions
-        let BAG_W, BAG_H, BAG_D;
+        // Bag dimensions - use same realistic sack shape for all
+        const BAG_W = 10.5, BAG_H = 7, BAG_D = 22;
         const bagOffsets = [];
 
-        if (isFL) {
-            // 6 bags per layer × 1 deep. 60/6=10 per slot, leave 1 gap each side
-            BAG_W = 9;  BAG_H = 6;  BAG_D = 46;
-            for (let c = 0; c < 6; c++) {
-                bagOffsets.push({ x: (c - 2.5) * BAG_W, z: 0 });
-            }
-        } else {
-            // 5 wide × 2 deep. (5×9.5 ≈ 47.5 fits 60), (2×22=44 fits 50)
-            BAG_W = 10.5;  BAG_H = 7;  BAG_D = 22;
-            for (let c = 0; c < 5; c++) {
-                for (let r = 0; r < 2; r++) {
-                    bagOffsets.push({ x: (c - 2) * BAG_W, z: (r - 0.5) * BAG_D });
-                }
+        for (let c = 0; c < 5; c++) {
+            for (let r = 0; r < 2; r++) {
+                bagOffsets.push({ x: (c - 2) * BAG_W, z: (r - 0.5) * BAG_D });
             }
         }
 
