@@ -1,4 +1,4 @@
-﻿window.assignBay = function(batch_name) {
+window.assignBay = function(batch_name) {
 	frappe.prompt([
 		{
 			label: 'New Bay Location',
@@ -93,6 +93,27 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         outerContainer.style.overflowY = 'auto';
         const totalBagsAll = data.reduce((s, i) => s + (i.bags || 0), 0);
         const totalKgsAll  = data.reduce((s, i) => s + (i.kgs  || 0), 0);
+
+        // ── Group items by prefix (PP / FL / FX / OTHER) ──
+        const PREFIX_META = {
+            'PP': { label: 'PP — Polypropylene',  grad: 'linear-gradient(135deg,#1e3a5f,#0f2744)', accent: '#38bdf8', light: '#e0f2fe' },
+            'FL': { label: 'FL — Flexible',        grad: 'linear-gradient(135deg,#1a3a2a,#0d2418)', accent: '#34d399', light: '#d1fae5' },
+            'FX': { label: 'FX — Special',         grad: 'linear-gradient(135deg,#3b1f5e,#1e0f34)', accent: '#a78bfa', light: '#ede9fe' },
+            'OTHER': { label: 'Other Materials',    grad: 'linear-gradient(135deg,#2d1b00,#1a1000)', accent: '#fbbf24', light: '#fef3c7' }
+        };
+        function getPrefix(item) {
+            const name = (item.item_name || item.item_code || '').toUpperCase();
+            for (const p of ['PP', 'FL', 'FX']) { if (name.startsWith(p)) return p; }
+            return 'OTHER';
+        }
+        const groups = {};
+        data.forEach(item => {
+            const p = getPrefix(item);
+            if (!groups[p]) groups[p] = [];
+            groups[p].push(item);
+        });
+        const groupOrder = ['PP', 'FL', 'FX', 'OTHER'].filter(p => groups[p]);
+
         outerContainer.innerHTML = `
             <div style="background:linear-gradient(135deg,#1e293b,#0f172a);padding:18px 24px;border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
                 <div>
@@ -101,44 +122,65 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                 </div>
                 <div style="color:#64748b;font-size:12px;background:rgba(255,255,255,0.05);padding:6px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);">Click any item to view 3D pallet layout →</div>
             </div>
-            <div id="rm-item-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;padding:20px;background:#eef2f7;"></div>
+            <div id="rm-groups-wrap" style="background:#eef2f7;padding:16px 20px;"></div>
         `;
-        const grid = outerContainer.querySelector('#rm-item-grid');
-        const BAGS_PER_PALLET = 50;
-        data.forEach((item, idx) => {
-            const bags    = Math.max(0, item.bags || 0);
-            const pallets = bags > 0 ? Math.ceil(Math.round(bags) / BAGS_PER_PALLET) : 0;
-            const hue     = (idx * 53 + 200) % 360;
-            const clr     = `hsl(${hue},65%,48%)`;
-            const clrL    = `hsl(${hue},65%,95%)`;
-            const card = document.createElement('div');
-            card.style.cssText = 'background:white;border-radius:14px;overflow:hidden;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.07);transition:all 0.18s ease;border:2px solid transparent;';
-            card.innerHTML = `
-                <div style="height:5px;background:${clr};"></div>
-                <div style="padding:16px 18px 14px;">
-                    <div style="font-weight:700;font-size:14px;color:#0f172a;line-height:1.4;margin-bottom:3px;">${item.item_name || item.item_code}</div>
-                    <div style="font-size:11px;color:#94a3b8;margin-bottom:14px;font-family:monospace;">${item.item_code}</div>
-                    <div style="display:flex;gap:8px;">
-                        <div style="flex:1;background:${clrL};border-radius:10px;padding:10px 6px;text-align:center;">
-                            <div style="font-size:22px;font-weight:900;color:${clr};line-height:1;">${bags.toFixed ? bags.toFixed(1) : bags}</div>
-                            <div style="font-size:10px;color:#94a3b8;margin-top:3px;font-weight:600;">BAGS</div>
-                        </div>
-                        <div style="flex:1;background:#f8fafc;border-radius:10px;padding:10px 6px;text-align:center;">
-                            <div style="font-size:22px;font-weight:900;color:#334155;line-height:1;">${pallets}</div>
-                            <div style="font-size:10px;color:#94a3b8;margin-top:3px;font-weight:600;">PALLETS</div>
-                        </div>
-                        <div style="flex:1;background:#f8fafc;border-radius:10px;padding:10px 6px;text-align:center;">
-                            <div style="font-size:16px;font-weight:800;color:#334155;line-height:1;">${(item.kgs||0).toFixed(0)}</div>
-                            <div style="font-size:10px;color:#94a3b8;margin-top:3px;font-weight:600;">KG</div>
-                        </div>
-                    </div>
-                    <div style="margin-top:12px;text-align:right;font-size:12px;font-weight:600;color:${clr};">View 3D →</div>
-                </div>
+        const wrap = outerContainer.querySelector('#rm-groups-wrap');
+
+        groupOrder.forEach(prefix => {
+            const meta  = PREFIX_META[prefix];
+            const items = groups[prefix];
+            const BAGS_PER_PALLET = prefix === 'FL' ? 60 : 50;
+
+            // Section header
+            const header = document.createElement('div');
+            header.style.cssText = `background:${meta.grad};border-radius:10px;padding:10px 18px;margin-bottom:12px;display:flex;align-items:center;gap:10px;`;
+            header.innerHTML = `
+                <span style="font-size:18px;">&#128230;</span>
+                <span style="color:#f1f5f9;font-weight:800;font-size:14px;">${meta.label}</span>
+                <span style="margin-left:auto;background:rgba(255,255,255,0.1);color:${meta.accent};font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);">
+                    ${items.length} item${items.length > 1 ? 's' : ''} · ${items.reduce((s,i)=>s+(i.bags||0),0).toFixed(0)} bags
+                </span>
             `;
-            card.addEventListener('mouseenter', () => { card.style.transform='translateY(-4px)'; card.style.boxShadow='0 12px 28px rgba(0,0,0,0.14)'; card.style.borderColor=clr; });
-            card.addEventListener('mouseleave', () => { card.style.transform=''; card.style.boxShadow='0 2px 10px rgba(0,0,0,0.07)'; card.style.borderColor='transparent'; });
-            card.addEventListener('click', () => showItemDetail(item, data, outerContainer));
-            grid.appendChild(card);
+            wrap.appendChild(header);
+
+            // Cards grid for this group
+            const grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:20px;';
+            wrap.appendChild(grid);
+
+            items.forEach((item, idx) => {
+                const bags    = Math.max(0, item.bags || 0);
+                const pallets = bags > 0 ? Math.ceil(Math.round(bags) / BAGS_PER_PALLET) : 0;
+                const card = document.createElement('div');
+                card.style.cssText = `background:white;border-radius:12px;overflow:hidden;cursor:pointer;
+                    box-shadow:0 2px 8px rgba(0,0,0,0.06);transition:all 0.15s ease;border:2px solid transparent;`;
+                card.innerHTML = `
+                    <div style="height:4px;background:${meta.accent};"></div>
+                    <div style="padding:14px 16px 12px;">
+                        <div style="font-weight:700;font-size:13px;color:#0f172a;line-height:1.4;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${item.item_name || item.item_code}">${item.item_name || item.item_code}</div>
+                        <div style="font-size:10px;color:#94a3b8;margin-bottom:12px;font-family:monospace;">${item.item_code}</div>
+                        <div style="display:flex;gap:6px;">
+                            <div style="flex:1;background:${meta.light};border-radius:8px;padding:8px 4px;text-align:center;">
+                                <div style="font-size:18px;font-weight:900;color:${meta.accent};line-height:1;">${bags.toFixed ? bags.toFixed(1) : bags}</div>
+                                <div style="font-size:9px;color:#94a3b8;margin-top:2px;font-weight:600;">BAGS</div>
+                            </div>
+                            <div style="flex:1;background:#f8fafc;border-radius:8px;padding:8px 4px;text-align:center;">
+                                <div style="font-size:18px;font-weight:900;color:#334155;line-height:1;">${pallets}</div>
+                                <div style="font-size:9px;color:#94a3b8;margin-top:2px;font-weight:600;">PALLETS</div>
+                            </div>
+                            <div style="flex:1;background:#f8fafc;border-radius:8px;padding:8px 4px;text-align:center;">
+                                <div style="font-size:14px;font-weight:800;color:#334155;line-height:1;">${(item.kgs||0).toFixed(0)}</div>
+                                <div style="font-size:9px;color:#94a3b8;margin-top:2px;font-weight:600;">KG</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:10px;text-align:right;font-size:11px;font-weight:700;color:${meta.accent};">View 3D →</div>
+                    </div>
+                `;
+                card.addEventListener('mouseenter', () => { card.style.transform='translateY(-3px)'; card.style.boxShadow=`0 10px 24px rgba(0,0,0,0.12)`; card.style.borderColor=meta.accent; });
+                card.addEventListener('mouseleave', () => { card.style.transform=''; card.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)'; card.style.borderColor='transparent'; });
+                card.addEventListener('click', () => showItemDetail(item, data, outerContainer));
+                grid.appendChild(card);
+            });
         });
     }
 
@@ -146,23 +188,32 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
     function showItemDetail(item, allData, outerContainer) {
         if (outerContainer._threeCleanup) { outerContainer._threeCleanup(); outerContainer._threeCleanup = null; }
         outerContainer.style.overflowY = 'hidden';
-        const BAGS_PER_PALLET = 50;
+
+        // Detect prefix for colour coding
+        const name   = (item.item_name || item.item_code || '').toUpperCase();
+        const prefix = name.startsWith('FL') ? 'FL' : name.startsWith('FX') ? 'FX' : name.startsWith('PP') ? 'PP' : 'OTHER';
+        const ACCENT  = prefix === 'FL' ? '#34d399' : prefix === 'FX' ? '#a78bfa' : '#38bdf8';
+        const BAGS_PER_PALLET = prefix === 'FL' ? 60 : 50;
         const totalBags  = Math.max(1, Math.round(item.bags || 1));
         const palletsCnt = Math.ceil(totalBags / BAGS_PER_PALLET);
+
         outerContainer.innerHTML = `
-            <div style="background:linear-gradient(135deg,#1e293b,#0f172a);padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <div style="background:linear-gradient(135deg,#1e293b,#0f172a);padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-bottom:2px solid ${ACCENT}33;">
                 <button id="rm-back-btn" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;">← All Items</button>
                 <div style="flex:1;min-width:0;">
-                    <div style="color:#f8fafc;font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.item_name || item.item_code}</div>
-                    <div style="color:#64748b;font-size:12px;margin-top:2px;">${item.item_code} &nbsp;·&nbsp; ${totalBags} bags &nbsp;·&nbsp; ${palletsCnt} pallets &nbsp;·&nbsp; ${(item.kgs||0).toFixed(0)} kg</div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="background:${ACCENT}22;color:${ACCENT};font-size:11px;font-weight:800;padding:2px 8px;border-radius:4px;border:1px solid ${ACCENT}44;">${prefix}</span>
+                        <span style="color:#f8fafc;font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.item_name || item.item_code}</span>
+                    </div>
+                    <div style="color:#64748b;font-size:12px;margin-top:3px;">${item.item_code} &nbsp;·&nbsp; ${totalBags} bags &nbsp;·&nbsp; ${palletsCnt} pallets &nbsp;·&nbsp; ${(item.kgs||0).toFixed(0)} kg</div>
                 </div>
                 <div style="display:flex;gap:10px;flex-shrink:0;">
-                    <div style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.3);border-radius:8px;padding:8px 14px;text-align:center;">
-                        <div style="color:#38bdf8;font-size:20px;font-weight:900;">${palletsCnt}</div>
+                    <div style="background:${ACCENT}18;border:1px solid ${ACCENT}44;border-radius:8px;padding:8px 14px;text-align:center;">
+                        <div style="color:${ACCENT};font-size:20px;font-weight:900;">${palletsCnt}</div>
                         <div style="color:#64748b;font-size:10px;font-weight:600;">PALLETS</div>
                     </div>
-                    <div style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.3);border-radius:8px;padding:8px 14px;text-align:center;">
-                        <div style="color:#38bdf8;font-size:20px;font-weight:900;">${totalBags}</div>
+                    <div style="background:${ACCENT}18;border:1px solid ${ACCENT}44;border-radius:8px;padding:8px 14px;text-align:center;">
+                        <div style="color:${ACCENT};font-size:20px;font-weight:900;">${totalBags}</div>
                         <div style="color:#64748b;font-size:10px;font-weight:600;">BAGS</div>
                     </div>
                 </div>
@@ -180,23 +231,44 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 
     // ── THREE.JS SINGLE-ITEM 3D VIEW ─────────────────────────────────────────
     function initItemThreeJS(item, canvasCont, outerContainer) {
-        const BAGS_PER_PALLET = 50;
-        const BAGS_PER_LAYER  = 10;   // 5 wide × 2 deep per layer
-        const LAYERS_MAX      = 5;    // 5 layers × 10 bags = 50 max
+        // ── Prefix-aware layout config ──
+        const iname  = (item.item_name || item.item_code || '').toUpperCase();
+        const prefix = iname.startsWith('FL') ? 'FL' : iname.startsWith('FX') ? 'FX' : iname.startsWith('PP') ? 'PP' : 'OTHER';
+        const isFL   = prefix === 'FL';
+
+        // FL: 6 wide × 1 deep per layer × 10 layers = 60 bags/pallet
+        // PP/FX/OTHER: 5 wide × 2 deep per layer × 5 layers = 50 bags/pallet
+        const BAGS_PER_PALLET = isFL ? 60 : 50;
+        const LAYERS_MAX      = isFL ? 10 : 5;
         const PALLETS_PER_ROW = 5;
 
-        // Pallet: 60 × 4 × 50
+        // Pallet fixed at 60 × 4 × 50 for all types
         const PALLET_W = 60, PALLET_H = 4, PALLET_D = 50;
-        // Bag: 5 cols × BAG_W=11 = 55 (fits 60), 2 rows × BAG_D=23 = 46 (fits 50)
-        const BAG_W = 11, BAG_H = 5.5, BAG_D = 23;
 
-        // 5×2 grid of bag positions per layer (relative to pallet center)
+        // Bag dimensions
+        let BAG_W, BAG_H, BAG_D;
         const bagOffsets = [];
-        for (let c = 0; c < 5; c++) {
-            for (let r = 0; r < 2; r++) {
-                bagOffsets.push({ x: (c - 2) * BAG_W, z: (r - 0.5) * BAG_D });
+
+        if (isFL) {
+            // 6 bags per layer × 1 deep. 60/6=10 per slot, leave 1 gap each side
+            BAG_W = 9;  BAG_H = 6;  BAG_D = 46;
+            for (let c = 0; c < 6; c++) {
+                bagOffsets.push({ x: (c - 2.5) * BAG_W, z: 0 });
+            }
+        } else {
+            // 5 wide × 2 deep. (5×9.5 ≈ 47.5 fits 60), (2×22=44 fits 50)
+            BAG_W = 10.5;  BAG_H = 7;  BAG_D = 22;
+            for (let c = 0; c < 5; c++) {
+                for (let r = 0; r < 2; r++) {
+                    bagOffsets.push({ x: (c - 2) * BAG_W, z: (r - 0.5) * BAG_D });
+                }
             }
         }
+
+        // Accent colour per prefix
+        const ACCENT_HEX = prefix === 'FL' ? 0x34d399 : prefix === 'FX' ? 0xa78bfa : 0x38bdf8;
+        const ACCENT_CSS = prefix === 'FL' ? '#34d399' : prefix === 'FX' ? '#a78bfa' : '#38bdf8';
+        const PALLET_COLOR = isFL ? 0xc8703a : 0xc8823a; // FL pallets slightly darker orange
 
         const totalBags    = Math.max(1, Math.round(item.bags || 1));
         const palletsCount = Math.ceil(totalBags / BAGS_PER_PALLET);
@@ -238,11 +310,11 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 
         // Geometries
         const palletGeo = new THREE.BoxGeometry(PALLET_W, PALLET_H, PALLET_D);
-        const palletMat = new THREE.MeshPhongMaterial({ color: 0xc8823a, shininess: 25 });
+        const palletMat = new THREE.MeshPhongMaterial({ color: PALLET_COLOR, shininess: 30 });
         const bagGeo    = new THREE.BoxGeometry(BAG_W, BAG_H, BAG_D);
-        const bagMat    = new THREE.MeshPhongMaterial({ color: 0xcfd4de, shininess: 55, specular: new THREE.Color(0x8899bb) });
+        const bagMat    = new THREE.MeshPhongMaterial({ color: 0xcfd4de, shininess: 60, specular: new THREE.Color(0x8899bb) });
         const bagEdgeGeo = new THREE.EdgesGeometry(bagGeo);
-        const bagEdgeMat = new THREE.LineBasicMaterial({ color: 0x5577aa });
+        const bagEdgeMat = new THREE.LineBasicMaterial({ color: 0x4466aa });
 
         // Instanced meshes
         const palletMesh = new THREE.InstancedMesh(palletGeo, palletMat, palletsCount);
@@ -277,7 +349,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             palletMesh.setMatrixAt(palletIdx, dummy.matrix);
 
             const bagsActual = Math.max(1, p === palletsCount - 1 ? totalBags - p * BAGS_PER_PALLET : BAGS_PER_PALLET);
-            palletMetadata[palletIdx] = { pallet_num: p + 1, bags: bagsActual, total_bags: totalBags, total_kgs: item.kgs || 0 };
+            palletMetadata[palletIdx] = { pallet_num: p + 1, bags: bagsActual, total_bags: totalBags, total_kgs: item.kgs || 0, accent: ACCENT_CSS };
 
             let bagCount = 0, layer = 0;
             while (bagCount < bagsActual && layer < LAYERS_MAX) {
@@ -335,7 +407,8 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                 palletMesh.getMatrixAt(p, dummy.matrix);
                 dummy.position.setFromMatrixPosition(dummy.matrix);
                 const meta = palletMetadata[p];
-                const stackTop = PALLET_H + Math.ceil(meta.bags / BAGS_PER_LAYER) * BAG_H + 8;
+                const bagsThisLayer = bagOffsets.length;
+                const stackTop = PALLET_H + Math.ceil(meta.bags / bagsThisLayer) * BAG_H + 8;
                 const wp = new THREE.Vector3(dummy.position.x, stackTop, dummy.position.z).project(camera);
                 if (wp.z > 1) continue;
                 const sx = ((wp.x + 1) / 2) * cw;
@@ -363,14 +436,16 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             }
         }
 
-        // Camera setup — center on full pallet group
+        // Camera setup — auto-frame all pallets
         const extent = Math.max(
             Math.min(palletsCount, PALLETS_PER_ROW) * SPACING_X,
             totalRows * SPACING_Z
         );
-        let camRadius = Math.max(200, extent * 0.85);
-        let camTheta = -0.4, camPhi = 0.55;
-        const camTarget = new THREE.Vector3(0, 15, 0);
+        // For large pallet counts, use a higher camera angle and more radius
+        const basePhi = totalRows > 4 ? 0.65 : 0.50;
+        let camRadius = Math.max(180, extent * (totalRows > 4 ? 1.0 : 0.85));
+        let camTheta = -0.35, camPhi = basePhi;
+        const camTarget = new THREE.Vector3(0, 12, 0);
 
         function rebuildCamera() {
             camera.position.set(
@@ -427,7 +502,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                     tooltip.style.left    = (e.clientX - rect.left + 14) + 'px';
                     tooltip.style.top     = (e.clientY - rect.top  - 80) + 'px';
                     tooltip.innerHTML = `
-                        <div style="font-weight:800;font-size:15px;color:#38bdf8;margin-bottom:4px;">Pallet #${meta.pallet_num}</div>
+                        <div style="font-weight:800;font-size:15px;color:${ACCENT_CSS};margin-bottom:4px;">Pallet #${meta.pallet_num}</div>
                         <div style="font-size:14px;font-weight:700;margin-bottom:8px;">${meta.bags} bags on this pallet</div>
                         <div style="border-top:1px solid #334155;padding-top:6px;color:#94a3b8;font-size:12px;">
                             <div>${item.item_name || item.item_code}</div>
