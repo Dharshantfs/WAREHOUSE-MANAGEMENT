@@ -189,7 +189,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                         <div style="margin-top:10px;text-align:right;font-size:11px;font-weight:700;color:${clr};">View 3D →</div>
                     </div>
                 `;
-                card.addEventListener('mouseenter', () => { card.style.transform='translateY(-3px)'; card.style.boxShadow=\`0 10px 24px rgba(0,0,0,0.12)\`; card.style.borderColor=clr; });
+                card.addEventListener('mouseenter', () => { card.style.transform='translateY(-3px)'; card.style.boxShadow='0 10px 24px rgba(0,0,0,0.12)'; card.style.borderColor=clr; });
                 card.addEventListener('mouseleave', () => { card.style.transform=''; card.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)'; card.style.borderColor='transparent'; });
                 card.addEventListener('click', () => showItemDetail(item, data, outerContainer));
                 grid.appendChild(card);
