@@ -92,271 +92,481 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
     }
 
     function initThreeJS(data, container) {
+        // ── SCENE SETUP ──────────────────────────────────────────────────────────
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xf8fafc);
-        
-        const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 5000);
-        // Isometric-like angle
-        camera.position.set(300, 400, 500);
-        camera.lookAt(0, 0, 0);
+        scene.background = new THREE.Color(0xf0f4f8);
+        scene.fog = new THREE.Fog(0xf0f4f8, 800, 2500);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(container.clientWidth, container.clientHeight);
+        const W = container.clientWidth || 800;
+        const H = container.clientHeight || 600;
+        const camera = new THREE.PerspectiveCamera(55, W / H, 0.5, 5000);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(W, H);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(renderer.domElement);
 
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        scene.add(ambientLight);
-        
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(200, 500, 300);
-        dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 2048;
-        dirLight.shadow.mapSize.height = 2048;
-        dirLight.shadow.camera.left = -500;
-        dirLight.shadow.camera.right = 500;
-        dirLight.shadow.camera.top = 500;
-        dirLight.shadow.camera.bottom = -500;
-        scene.add(dirLight);
+        // ── FLOOR GRID ───────────────────────────────────────────────────────────
+        const gridHelper = new THREE.GridHelper(3000, 60, 0xcccccc, 0xe0e0e0);
+        gridHelper.position.y = 0;
+        scene.add(gridHelper);
 
-        // Calculate total bags and pallets for InstancedMesh
+        // ── LIGHTING ─────────────────────────────────────────────────────────────
+        scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+        const sun = new THREE.DirectionalLight(0xfff8e7, 1.0);
+        sun.position.set(300, 600, 400);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(2048, 2048);
+        sun.shadow.camera.left = -800;
+        sun.shadow.camera.right = 800;
+        sun.shadow.camera.top = 800;
+        sun.shadow.camera.bottom = -800;
+        sun.shadow.bias = -0.001;
+        scene.add(sun);
+        const fillLight = new THREE.DirectionalLight(0xc8e0ff, 0.3);
+        fillLight.position.set(-200, 200, -300);
+        scene.add(fillLight);
+
+        // ── GEOMETRY HELPERS ─────────────────────────────────────────────────────
+        // Sack: flat-ish rounded cylinder (like a filled bag lying flat)
+        // Radialtop slightly less than base to look "tied at top"
+        const SACK_R  = 8.5;   // radius (sack width ≈ 17 units)
+        const SACK_RT = 7.0;   // top radius (tapered)
+        const SACK_H  = 4.5;   // height of each sack layer
+        const SACK_SEG = 10;   // cylinder segments (low for perf, still round)
+
+        const sackGeo = new THREE.CylinderGeometry(SACK_RT, SACK_R, SACK_H, SACK_SEG, 1);
+        // Silver/metallic sack colour
+        const sackMat = new THREE.MeshLambertMaterial({ color: 0xc8cdd4 });
+
+        // Edge outline geometry for border visibility
+        const sackEdgeGeo = new THREE.EdgesGeometry(sackGeo);
+        const sackEdgeMat = new THREE.LineBasicMaterial({ color: 0x445566, linewidth: 1 });
+
+        // Pallet
+        const palletGeo = new THREE.BoxGeometry(55, 3.5, 47);
+        const palletMat = new THREE.MeshLambertMaterial({ color: 0xc8843a });
+
+        // ── COUNT INSTANCES ──────────────────────────────────────────────────────
         let totalPallets = 0;
-        let totalBags = 0;
+        let totalSacks   = 0;
+        const SACKS_PER_PALLET = 50;
+        const SACKS_PER_LAYER  = 5;   // 5 sacks per layer (3+2 stagger)
+        const LAYERS_MAX       = 10;
+
         data.forEach(item => {
-            let bags = Math.floor(item.bags);
-            let pallets = Math.ceil(bags / 50);
-            if (pallets === 0 && item.bags > 0) { pallets = 1; bags = 1; }
+            let bags = Math.max(1, Math.round(item.bags));
+            let pallets = Math.ceil(bags / SACKS_PER_PALLET);
             totalPallets += pallets;
-            totalBags += bags;
+            totalSacks   += bags;
         });
 
-        // Geometries & Materials
-        const palletGeo = new THREE.BoxGeometry(51, 4, 43.25);
-        const palletMat = new THREE.MeshLambertMaterial({ color: 0xd4a373 });
+        // Edge baking only for reasonable sack counts (perf guard)
+        const BAKE_EDGES = totalSacks <= 600;
+
         const palletMesh = new THREE.InstancedMesh(palletGeo, palletMat, totalPallets);
         palletMesh.castShadow = true;
         palletMesh.receiveShadow = true;
         scene.add(palletMesh);
 
-        const bagGeo = new THREE.BoxGeometry(16, 4, 18); // Adjusted to fit 5 bags per layer easily
-        const bagMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-        const bagMesh = new THREE.InstancedMesh(bagGeo, bagMat, totalBags);
-        bagMesh.castShadow = true;
-        bagMesh.receiveShadow = true;
-        scene.add(bagMesh);
+        const sackMesh = new THREE.InstancedMesh(sackGeo, sackMat, totalSacks);
+        sackMesh.castShadow = true;
+        sackMesh.receiveShadow = true;
+        scene.add(sackMesh);
 
-        // Text labels for each item group
-        const canvasObj = document.createElement('canvas');
-        const contextObj = canvasObj.getContext('2d');
+        // Edge lines: one LineSegments per sack – BUT for thousands of sacks that's too many objects.
+        // Instead we bake all edges into a BufferGeometry merged together for perf.
+        // We'll collect positions for one merged EdgeMesh.
+        const edgePositions = [];
 
-        // Layout variables
-        const spacingX = 100;
-        const spacingZ = 120;
-        let currentX = 0;
-        let currentZ = 0;
-        const maxColumns = 4; // Pallets per row
-        
-        let palletIndex = 0;
-        let bagIndex = 0;
+        // ── LAYOUT ──────────────────────────────────────────────────────────────
+        // Items are placed in SEPARATE ZONES, each zone has its own row block.
+        // Gap between zones = 2 empty rows.
+        const COL_COUNT  = 5;   // pallets per row inside a zone
+        const SPACING_X  = 70;  // spacing between pallet columns
+        const SPACING_Z  = 75;  // spacing between pallet rows
+        const ZONE_GAP_Z = 150; // extra Z gap between material groups
+
         const dummy = new THREE.Object3D();
-        
-        // Metadata for raycaster hover
-        const palletMetadata = {}; 
+        const palletMetadata = {};
+
+        let palletIndex = 0;
+        let sackIndex   = 0;
+        let zoneZ       = 0;   // running Z cursor between zones
+
+        // For label rendering (CSS overlay)
+        const zoneLabels = [];
 
         data.forEach((item, itemIdx) => {
-            let remainingBags = Math.floor(item.bags);
-            if (remainingBags === 0 && item.bags > 0) remainingBags = 1; // Draw at least 1
-            let palletsForThisItem = Math.ceil(remainingBags / 50);
-            
-            for (let p = 0; p < palletsForThisItem; p++) {
-                // Determine position
-                let pX = currentX * spacingX - ((maxColumns-1) * spacingX)/2;
-                let pZ = currentZ * spacingZ - 100; // Offset Z to center a bit
-                
-                // Position pallet base
-                dummy.position.set(pX, 2, pZ);
+            let totalBags = Math.max(1, Math.round(item.bags));
+            let palletsCount = Math.ceil(totalBags / SACKS_PER_PALLET);
+
+            // Calculate bounding box of this zone to position the label correctly
+            let rows = Math.ceil(palletsCount / COL_COUNT);
+            // Center X = midpoint of the pallet columns in this zone
+            let zoneCols = Math.min(palletsCount, COL_COUNT);
+            let zoneCenterX = ((zoneCols - 1) * SPACING_X) / 2 - ((zoneCols - 1) * SPACING_X) / 2; // always 0 (symmetric)
+            let zoneDepth = rows * SPACING_Z;
+
+            zoneLabels.push({
+                x: zoneCenterX,
+                y: totalBags > 0 ? (LAYERS_MAX * SACK_H + 30) : 20,
+                z: zoneZ + zoneDepth / 2,
+                text: item.item_name || item.item_code,
+                code: item.item_code,
+                bags: item.bags,
+                kgs: item.kgs,
+            });
+
+            let remaining = totalBags;
+            let col = 0, row = 0;
+
+            for (let p = 0; p < palletsCount; p++) {
+                let bagsHere = Math.min(remaining, SACKS_PER_PALLET);
+                remaining -= bagsHere;
+
+                let px = col * SPACING_X - ((Math.min(palletsCount, COL_COUNT) - 1) * SPACING_X) / 2;
+                let pz = zoneZ + row * SPACING_Z;
+
+                // Place pallet
+                dummy.position.set(px, 1.75, pz);
+                dummy.rotation.set(0, 0, 0);
+                dummy.scale.set(1, 1, 1);
                 dummy.updateMatrix();
                 palletMesh.setMatrixAt(palletIndex, dummy.matrix);
-                
-                // Save metadata for hover
-                let bagsInThisPallet = Math.min(remainingBags, 50);
-                remainingBags -= bagsInThisPallet;
-                
-                let displayBagsCount = bagsInThisPallet;
-                if (remainingBags <= 0 && item.bags % 1 !== 0) {
-                    let lastPalletValue = item.bags - (p * 50);
-                    displayBagsCount = lastPalletValue.toFixed(3);
-                }
 
                 palletMetadata[palletIndex] = {
                     item_name: item.item_name,
                     item_code: item.item_code,
-                    bags: displayBagsCount,
+                    bags: bagsHere,
                     total_kgs: item.kgs,
-                    total_bags: item.bags.toFixed(3)
+                    total_bags: item.bags.toFixed ? item.bags.toFixed(3) : item.bags,
                 };
-                
-                // Position bags (10 layers of 5 bags)
-                let bCount = 0;
-                for (let layer = 0; layer < 10; layer++) {
-                    for (let b = 0; b < 5; b++) {
-                        if (bCount >= bagsInThisPallet) break;
-                        
-                        // 3x2 grid with 1 missing = 5 bags
-                        let bx = (b % 3) * 17 - 17; // -17, 0, 17
-                        let bz = Math.floor(b / 3) * 20 - 10; // -10, 10
-                        
-                        // Add slight randomness for realism
-                        let jitterX = (Math.random() - 0.5) * 1.5;
-                        let jitterZ = (Math.random() - 0.5) * 1.5;
-                        
-                        dummy.position.set(pX + bx + jitterX, 4 + 2 + layer * 4, pZ + bz + jitterZ);
+
+                // Place sacks on this pallet
+                let sackCount = 0;
+                let layer = 0;
+                while (sackCount < bagsHere && layer < LAYERS_MAX) {
+                    // Alternate row orientation for stagger effect (like real sacks)
+                    let isOdd = layer % 2 === 1;
+                    for (let s = 0; s < SACKS_PER_LAYER && sackCount < bagsHere; s++) {
+                        // 3-2 stagger: odd rows offset
+                        let col3 = s % 3;
+                        let row2 = Math.floor(s / 3);
+                        let sx = (col3 - 1) * (SACK_R * 2 + 1) + (isOdd ? (SACK_R + 0.5) : 0);
+                        let sz = (row2 - 0.5) * (SACK_R * 2 + 1);
+
+                        // Slight random jitter for realism
+                        let jx = (Math.random() - 0.5) * 1.2;
+                        let jz = (Math.random() - 0.5) * 1.2;
+
+                        let sy = 3.5 + SACK_H / 2 + layer * SACK_H;
+
+                        dummy.position.set(px + sx + jx, sy, pz + sz + jz);
+                        // Slight random Y rotation per sack for realism
+                        dummy.rotation.set(0, (Math.random() - 0.5) * 0.15, 0);
+                        dummy.scale.set(1, 1, 1);
                         dummy.updateMatrix();
-                        bagMesh.setMatrixAt(bagIndex, dummy.matrix);
-                        bagIndex++;
-                        bCount++;
+                        sackMesh.setMatrixAt(sackIndex, dummy.matrix);
+
+                        // Bake edge positions (transform manually for merged edges)
+                        if (BAKE_EDGES) {
+                            const mat = dummy.matrix;
+                            const pos = sackEdgeGeo.attributes.position;
+                            for (let ei = 0; ei < pos.count; ei++) {
+                                let ex = pos.getX(ei), ey = pos.getY(ei), ez = pos.getZ(ei);
+                                let v = new THREE.Vector3(ex, ey, ez).applyMatrix4(mat);
+                                edgePositions.push(v.x, v.y, v.z);
+                            }
+                        }
+
+                        sackIndex++;
+                        sackCount++;
                     }
+                    layer++;
                 }
-                
+
                 palletIndex++;
-                currentX++;
-                if (currentX >= maxColumns) {
-                    currentX = 0;
-                    currentZ++;
-                }
+                col++;
+                if (col >= COL_COUNT) { col = 0; row++; }
             }
-            
-            // Add a gap after each item group if the next item starts
-            if (currentX !== 0) {
-                currentX = 0;
-                currentZ++;
-            }
+
+            // Advance Z to next zone
+            zoneZ += Math.ceil(palletsCount / COL_COUNT) * SPACING_Z + ZONE_GAP_Z;
         });
 
         palletMesh.instanceMatrix.needsUpdate = true;
-        bagMesh.instanceMatrix.needsUpdate = true;
+        sackMesh.instanceMatrix.needsUpdate = true;
 
-        // Camera interaction (OrbitControls not loaded, so we implement simple drag & hover)
-        let isDragging = false;
-        let previousMousePosition = { x: 0, y: 0 };
-        let cameraAngleX = Math.PI / 4;
-        let cameraAngleY = Math.PI / 4;
-        let cameraRadius = 600;
-
-        function updateCamera() {
-            camera.position.x = cameraRadius * Math.sin(cameraAngleX) * Math.cos(cameraAngleY);
-            camera.position.y = cameraRadius * Math.sin(cameraAngleY);
-            camera.position.z = cameraRadius * Math.cos(cameraAngleX) * Math.cos(cameraAngleY);
-            camera.lookAt(0, 0, 0);
+        // ── MERGED EDGE LINES ─────────────────────────────────────────────────────
+        if (edgePositions.length > 0) {
+            const edgeBuf = new THREE.BufferGeometry();
+            edgeBuf.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+            const edgeLines = new THREE.LineSegments(edgeBuf, sackEdgeMat);
+            scene.add(edgeLines);
         }
-        updateCamera();
 
-        container.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            previousMousePosition = { x: e.offsetX, y: e.offsetY };
-        });
-        container.addEventListener('mouseup', () => { isDragging = false; });
-        container.addEventListener('mouseleave', () => { isDragging = false; });
-        
+        // ── CSS LABELS OVERLAY ───────────────────────────────────────────────────
+        // We create a 2D canvas overlay that follows the 3D positions
+        const labelCanvas = document.createElement('canvas');
+        labelCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;width:100%;height:100%;';
+        container.style.position = 'relative';
+        container.appendChild(labelCanvas);
+
+        function projectToScreen(x, y, z) {
+            const v = new THREE.Vector3(x, y, z).project(camera);
+            return {
+                sx: ((v.x + 1) / 2) * labelCanvas.width,
+                sy: ((-v.y + 1) / 2) * labelCanvas.height,
+                behind: v.z > 1
+            };
+        }
+
+        // Polyfill ctx.roundRect for older browsers
+        function canvasRoundRect(ctx, x, y, w, h, r) {
+            if (typeof ctx.roundRect === 'function') {
+                ctx.roundRect(x, y, w, h, r);
+            } else {
+                ctx.moveTo(x + r, y);
+                ctx.lineTo(x + w - r, y);
+                ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+                ctx.lineTo(x + w, y + h - r);
+                ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                ctx.lineTo(x + r, y + h);
+                ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+                ctx.lineTo(x, y + r);
+                ctx.quadraticCurveTo(x, y, x + r, y);
+                ctx.closePath();
+            }
+        }
+
+        let _lblW = 0, _lblH = 0; // track size to avoid redundant canvas resets
+        function drawLabels() {
+            const cw = container.clientWidth;
+            const ch = container.clientHeight;
+            // Only resize when dimensions actually changed (avoids clearing context unnecessarily)
+            if (labelCanvas.width !== cw || labelCanvas.height !== ch) {
+                labelCanvas.width  = cw;
+                labelCanvas.height = ch;
+            }
+            const ctx = labelCanvas.getContext('2d');
+            ctx.clearRect(0, 0, cw, ch);
+
+            zoneLabels.forEach(lbl => {
+                const p = projectToScreen(lbl.x, lbl.y, lbl.z);
+                if (p.behind) return;
+                const dist = camera.position.distanceTo(new THREE.Vector3(lbl.x, 0, lbl.z));
+                if (dist > 1800) return;
+                const alpha = Math.min(1, Math.max(0, (1500 - dist) / 600));
+                const scale = Math.max(0.6, Math.min(1.4, 600 / dist));
+
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.translate(p.sx, p.sy);
+
+                // Background pill
+                const name = lbl.text.length > 30 ? lbl.text.substring(0, 28) + '…' : lbl.text;
+                const info = `${lbl.bags.toFixed ? lbl.bags.toFixed(1) : lbl.bags} bags  |  ${lbl.kgs} kg`;
+                const fw = Math.max(name.length, info.length) * 7 * scale + 24;
+                const fh = 52 * scale;
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                ctx.beginPath();
+                canvasRoundRect(ctx, -fw/2, -fh, fw, fh, 8 * scale);
+                ctx.fill();
+
+                ctx.fillStyle = '#f0f9ff';
+                ctx.font = `bold ${Math.round(13 * scale)}px Inter, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillText(name, 0, -fh + 18 * scale);
+
+                ctx.fillStyle = '#38bdf8';
+                ctx.font = `${Math.round(11 * scale)}px Inter, sans-serif`;
+                ctx.fillText(info, 0, -fh + 34 * scale);
+
+                // Arrow down
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                ctx.beginPath();
+                ctx.moveTo(-7 * scale, 0);
+                ctx.lineTo(7 * scale, 0);
+                ctx.lineTo(0, 8 * scale);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            });
+        }
+
+        // ── CAMERA CONTROLLER ────────────────────────────────────────────────────
+        // Supports: drag to orbit, scroll to zoom (very close), WASD to pan
+        let isDragging = false;
+        let prevMouse = { x: 0, y: 0 };
+
+        // Named handler so we can properly remove it on cleanup
+        function onMouseUp() { isDragging = false; }
+
+        // Start at a good overview position
+        let camTarget = new THREE.Vector3(0, 0, zoneZ / 2); // center on all zones
+        let camRadius = Math.max(400, zoneZ * 0.6);
+        let camTheta  = -Math.PI / 6;   // horizontal angle
+        let camPhi    = Math.PI / 4;    // vertical angle
+
+        function rebuildCamera() {
+            camera.position.set(
+                camTarget.x + camRadius * Math.cos(camPhi) * Math.sin(camTheta),
+                camTarget.y + camRadius * Math.sin(camPhi),
+                camTarget.z + camRadius * Math.cos(camPhi) * Math.cos(camTheta)
+            );
+            camera.lookAt(camTarget);
+        }
+        rebuildCamera();
+
+        const canvas = renderer.domElement;
+
+        // ── TOOLTIP & RAYCASTER ──────────────────────────────────────────────────
         const tooltip = document.getElementById('rm-tooltip');
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
 
-        container.addEventListener('mousemove', (e) => {
-            if (isDragging) {
-                let deltaMove = {
-                    x: e.offsetX - previousMousePosition.x,
-                    y: e.offsetY - previousMousePosition.y
-                };
-                cameraAngleX -= deltaMove.x * 0.01;
-                cameraAngleY += deltaMove.y * 0.01;
-                // Limit vertical angle
-                cameraAngleY = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, cameraAngleY));
-                
-                updateCamera();
-                previousMousePosition = { x: e.offsetX, y: e.offsetY };
+        canvas.addEventListener('mousedown', e => {
+            isDragging = true;
+            prevMouse = { x: e.clientX, y: e.clientY };
+        });
+        window.addEventListener('mouseup', onMouseUp);
+
+        canvas.addEventListener('mousemove', e => {
+            if (!isDragging) {
+                // Hover tooltip
+                let rect = canvas.getBoundingClientRect();
+                mouse.x = ((e.clientX - rect.left) / canvas.clientWidth) * 2 - 1;
+                mouse.y = -((e.clientY - rect.top) / canvas.clientHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+
+                const intersects = raycaster.intersectObjects([palletMesh, sackMesh]);
+                if (intersects.length > 0) {
+                    let hitPoint = intersects[0].point;
+                    let closestId = -1, minD = Infinity;
+                    for (let i = 0; i < palletIndex; i++) {
+                        palletMesh.getMatrixAt(i, dummy.matrix);
+                        dummy.position.setFromMatrixPosition(dummy.matrix);
+                        let d = dummy.position.distanceTo(hitPoint);
+                        if (d < minD) { minD = d; closestId = i; }
+                    }
+                    if (closestId !== -1 && minD < 80) {
+                        let meta = palletMetadata[closestId];
+                        if (meta) {
+                            tooltip.style.display = 'block';
+                            tooltip.style.left = (e.clientX - canvas.getBoundingClientRect().left) + 'px';
+                            tooltip.style.top  = (e.clientY - canvas.getBoundingClientRect().top - 15) + 'px';
+                            tooltip.innerHTML = `
+                                <div style="font-weight:700;font-size:15px;margin-bottom:4px;">${meta.item_name}</div>
+                                <div style="color:#94a3b8;font-size:12px;margin-bottom:8px;">${meta.item_code}</div>
+                                <div style="color:#e2e8f0;">This Pallet: <span style="font-weight:700;color:#38bdf8;">${meta.bags} bags</span></div>
+                                <div style="margin-top:6px;padding-top:6px;border-top:1px solid #334155;color:#cbd5e1;">
+                                    Total: <b>${meta.total_kgs} kg</b> &nbsp;(${meta.total_bags} bags)
+                                </div>`;
+                            canvas.style.cursor = 'pointer';
+                            return;
+                        }
+                    }
+                }
+                tooltip.style.display = 'none';
+                canvas.style.cursor = 'default';
+                return;
             }
 
-            // Hover raycasting
-            let rect = container.getBoundingClientRect();
-            mouse.x = ((e.clientX - rect.left) / container.clientWidth) * 2 - 1;
-            mouse.y = -((e.clientY - rect.top) / container.clientHeight) * 2 + 1;
-            
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects([palletMesh, bagMesh]);
-            
-            if (intersects.length > 0) {
-                let instanceId = intersects[0].instanceId;
-                // Because bags outnumber pallets, we need to map bag instance to pallet instance if they hovered a bag
-                // But raycaster returns instanceId of the specific mesh. 
-                // A simpler way: we can just check the position of the hit and find the closest pallet center!
-                let hitPoint = intersects[0].point;
-                let closestPalletId = -1;
-                let minDist = Infinity;
-                
-                for (let i = 0; i < palletIndex; i++) {
-                    palletMesh.getMatrixAt(i, dummy.matrix);
-                    dummy.position.setFromMatrixPosition(dummy.matrix);
-                    let d = dummy.position.distanceTo(hitPoint);
-                    if (d < minDist) {
-                        minDist = d;
-                        closestPalletId = i;
-                    }
-                }
-                
-                if (closestPalletId !== -1 && minDist < 60) {
-                    let meta = palletMetadata[closestPalletId];
-                    if (meta) {
-                        tooltip.style.display = 'block';
-                        tooltip.style.left = e.offsetX + 'px';
-                        tooltip.style.top = e.offsetY + 'px';
-                        tooltip.innerHTML = `
-                            <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;">${meta.item_name}</div>
-                            <div style="color: #cbd5e1; margin-bottom: 8px;">${meta.item_code}</div>
-                            <div>This Pallet: <span style="font-weight: 600; color: #38bdf8;">${meta.bags} bags</span></div>
-                            <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #475569;">
-                                Total Stock: <span style="font-weight: 600;">${meta.total_kgs} kg</span> (${meta.total_bags} bags)
-                            </div>
-                        `;
-                        container.style.cursor = 'pointer';
-                        return;
-                    }
-                }
-            }
-            
-            tooltip.style.display = 'none';
-            container.style.cursor = 'default';
+            let dx = e.clientX - prevMouse.x;
+            let dy = e.clientY - prevMouse.y;
+            prevMouse = { x: e.clientX, y: e.clientY };
+            camTheta -= dx * 0.005;
+            camPhi    = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, camPhi - dy * 0.005));
+            rebuildCamera();
         });
 
-        // Wheel zoom
-        container.addEventListener('wheel', (e) => {
+        // Scroll zoom – allow very close (radius 30) so user can "walk in"
+        canvas.addEventListener('wheel', e => {
             e.preventDefault();
-            cameraRadius += e.deltaY * 0.5;
-            cameraRadius = Math.max(200, Math.min(1500, cameraRadius));
-            updateCamera();
-        });
+            camRadius += e.deltaY * 0.4;
+            camRadius = Math.max(30, Math.min(2500, camRadius));
+            rebuildCamera();
+        }, { passive: false });
 
-        // Render loop
+        // WASD pan (moves the look-at target)
+        const keys = {};
+        function onKeyDown(e) { keys[e.key.toLowerCase()] = true; }
+        function onKeyUp(e)   { keys[e.key.toLowerCase()] = false; }
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup',   onKeyUp);
+
+        function handleKeys() {
+            const speed = camRadius * 0.008;
+            const right = new THREE.Vector3();
+            const forward = new THREE.Vector3();
+            camera.getWorldDirection(forward);
+            forward.y = 0; forward.normalize();
+            right.crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
+
+            if (keys['w'] || keys['arrowup'])    { camTarget.addScaledVector(forward,  speed); }
+            if (keys['s'] || keys['arrowdown'])  { camTarget.addScaledVector(forward, -speed); }
+            if (keys['a'] || keys['arrowleft'])  { camTarget.addScaledVector(right,   -speed); }
+            if (keys['d'] || keys['arrowright']) { camTarget.addScaledVector(right,    speed); }
+            if (keys['q'])                        { camTarget.y += speed * 0.5; }
+            if (keys['e'])                        { camTarget.y = Math.max(0, camTarget.y - speed * 0.5); }
+            rebuildCamera();
+        }
+
+
+        // ── HUD – controls hint ──────────────────────────────────────────────────
+        const hud = document.createElement('div');
+        hud.style.cssText = `
+            position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+            background: rgba(15,23,42,0.75); color: #94a3b8;
+            font: 12px Inter,sans-serif; padding: 8px 18px; border-radius: 20px;
+            pointer-events: none; white-space: nowrap; backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.08);`;
+        hud.textContent = '🖱 Drag to orbit  •  Scroll to zoom in/out  •  WASD / Arrow keys to pan';
+        container.appendChild(hud);
+
+        // ── RENDER LOOP ──────────────────────────────────────────────────────────
+        let frameId;
         function animate() {
-            requestAnimationFrame(animate);
+            frameId = requestAnimationFrame(animate);
+            handleKeys();
+            drawLabels();
             renderer.render(scene, camera);
         }
         animate();
-        
-        // Handle resize
-        window.addEventListener('resize', () => {
+
+        // ── RESIZE ───────────────────────────────────────────────────────────────
+        const resizeObs = new ResizeObserver(() => {
             if (!container) return;
-            camera.aspect = container.clientWidth / container.clientHeight;
+            const w = container.clientWidth, h = container.clientHeight;
+            camera.aspect = w / h;
             camera.updateProjectionMatrix();
-            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setSize(w, h);
         });
+        resizeObs.observe(container);
+
+        // Cleanup when container removed
+        const mutObs = new MutationObserver(() => {
+            if (!document.body.contains(container)) {
+                cancelAnimationFrame(frameId);
+                resizeObs.disconnect();
+                mutObs.disconnect();
+                // Properly remove the named mouseup handler (anonymous arrow functions can't be removed)
+                window.removeEventListener('mouseup', onMouseUp);
+                window.removeEventListener('keydown', onKeyDown);
+                window.removeEventListener('keyup', onKeyUp);
+            }
+        });
+        mutObs.observe(document.body, { childList: true, subtree: true });
     }
 
 	// ── Add action buttons to the Frappe page toolbar ──
 	let currentView = 'FG';
-	let rmButton = page.add_inner_button('🏭 Switch to RM View', function() {
+	page.add_inner_button('🏭 Switch to RM View', function() {
 		if (currentView === 'FG') {
 			currentView = 'RM';
 			$(this).html('🏭 Switch to FG View');
@@ -575,9 +785,10 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         removeOrderCodeTable(doc);
         let mainBlock = inputContainer.parentNode;
         
-        let container = doc.createElement('div');
-        container.id = 'injected-order-table-container';
-        container.className = 'injected-table-container';
+        // Use tableDiv to avoid shadowing the outer 'container' variable
+        let tableDiv = doc.createElement('div');
+        tableDiv.id = 'injected-order-table-container';
+        tableDiv.className = 'injected-table-container';
         
         let html = `
             <div style="padding: 1rem 1.25rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: white;">
@@ -622,8 +833,8 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             </table>
         `;
         
-        container.innerHTML = html;
-        mainBlock.parentNode.appendChild(container);
+        tableDiv.innerHTML = html;
+        mainBlock.parentNode.appendChild(tableDiv);
         
         // Actively hide React's "Scan Failed" error card if it appears
         setTimeout(() => {
