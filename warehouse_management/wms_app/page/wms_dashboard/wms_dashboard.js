@@ -331,7 +331,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         const edgePositions = [];
 
         // ── Racking Layout config ──
-        const RACK_LEVELS = isFL ? 1 : 3; 
+        const RACK_LEVELS = 3; 
         const BAYS_PER_ROW = 5;
         const SPACING_X = PALLET_W + 16;
         const SPACING_Z = PALLET_D + 20;
