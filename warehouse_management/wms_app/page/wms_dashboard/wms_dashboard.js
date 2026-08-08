@@ -91,19 +91,25 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             outerContainer._threeCleanup = null;
         }
         outerContainer.style.overflowY = 'auto';
+
+        // ── Enforce 1 bag = 25 KG ──
+        data.forEach(d => {
+            d.bags = Math.max(0, Math.floor((d.kgs || 0) / 25));
+        });
+
         const totalBagsAll = data.reduce((s, i) => s + (i.bags || 0), 0);
         const totalKgsAll  = data.reduce((s, i) => s + (i.kgs  || 0), 0);
 
-        // ── Group items by prefix (PP / FL / FX / OTHER) ──
+        // ── Group items by prefix (PP / FL / OTHER) ──
         const PREFIX_META = {
-            'PP': { label: 'PP — Polypropylene',  grad: 'linear-gradient(135deg,#1e3a5f,#0f2744)', accent: '#38bdf8', light: '#e0f2fe' },
-            'FL': { label: 'FL — Flexible',        grad: 'linear-gradient(135deg,#1a3a2a,#0d2418)', accent: '#34d399', light: '#d1fae5' },
-            'FX': { label: 'FX — Special',         grad: 'linear-gradient(135deg,#3b1f5e,#1e0f34)', accent: '#a78bfa', light: '#ede9fe' },
-            'OTHER': { label: 'Other Materials',    grad: 'linear-gradient(135deg,#2d1b00,#1a1000)', accent: '#fbbf24', light: '#fef3c7' }
+            'PP': { label: 'PP — Polypropylene',  grad: 'linear-gradient(135deg,#1e3a5f,#0f2744)', accent: '#38bdf8' },
+            'FL': { label: 'FL — Flexible',        grad: 'linear-gradient(135deg,#1a3a2a,#0d2418)', accent: '#34d399' },
+            'OTHER': { label: 'Other Materials',    grad: 'linear-gradient(135deg,#2d1b00,#1a1000)', accent: '#fbbf24' }
         };
         function getPrefix(item) {
             const name = (item.item_name || item.item_code || '').toUpperCase();
-            for (const p of ['PP', 'FL', 'FX']) { if (name.startsWith(p)) return p; }
+            if (name.startsWith('PP')) return 'PP';
+            if (name.startsWith('FL')) return 'FL';
             return 'OTHER';
         }
         const groups = {};
@@ -112,7 +118,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             if (!groups[p]) groups[p] = [];
             groups[p].push(item);
         });
-        const groupOrder = ['PP', 'FL', 'FX', 'OTHER'].filter(p => groups[p]);
+        const groupOrder = ['PP', 'FL', 'OTHER'].filter(p => groups[p]);
 
         outerContainer.innerHTML = `
             <div style="background:linear-gradient(135deg,#1e293b,#0f172a);padding:18px 24px;border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
@@ -151,17 +157,24 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             items.forEach((item, idx) => {
                 const bags    = Math.max(0, item.bags || 0);
                 const pallets = bags > 0 ? Math.ceil(Math.round(bags) / BAGS_PER_PALLET) : 0;
+                
+                // Unique colours per card
+                const globalIdx = data.indexOf(item);
+                const hue  = (globalIdx * 53 + 200) % 360;
+                const clr  = `hsl(${hue},65%,48%)`;
+                const clrL = `hsl(${hue},65%,95%)`;
+
                 const card = document.createElement('div');
                 card.style.cssText = `background:white;border-radius:12px;overflow:hidden;cursor:pointer;
                     box-shadow:0 2px 8px rgba(0,0,0,0.06);transition:all 0.15s ease;border:2px solid transparent;`;
                 card.innerHTML = `
-                    <div style="height:4px;background:${meta.accent};"></div>
+                    <div style="height:4px;background:${clr};"></div>
                     <div style="padding:14px 16px 12px;">
                         <div style="font-weight:700;font-size:13px;color:#0f172a;line-height:1.4;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${item.item_name || item.item_code}">${item.item_name || item.item_code}</div>
                         <div style="font-size:10px;color:#94a3b8;margin-bottom:12px;font-family:monospace;">${item.item_code}</div>
                         <div style="display:flex;gap:6px;">
-                            <div style="flex:1;background:${meta.light};border-radius:8px;padding:8px 4px;text-align:center;">
-                                <div style="font-size:18px;font-weight:900;color:${meta.accent};line-height:1;">${bags.toFixed ? bags.toFixed(1) : bags}</div>
+                            <div style="flex:1;background:${clrL};border-radius:8px;padding:8px 4px;text-align:center;">
+                                <div style="font-size:18px;font-weight:900;color:${clr};line-height:1;">${bags.toFixed ? bags.toFixed(1) : bags}</div>
                                 <div style="font-size:9px;color:#94a3b8;margin-top:2px;font-weight:600;">BAGS</div>
                             </div>
                             <div style="flex:1;background:#f8fafc;border-radius:8px;padding:8px 4px;text-align:center;">
@@ -173,10 +186,10 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                                 <div style="font-size:9px;color:#94a3b8;margin-top:2px;font-weight:600;">KG</div>
                             </div>
                         </div>
-                        <div style="margin-top:10px;text-align:right;font-size:11px;font-weight:700;color:${meta.accent};">View 3D →</div>
+                        <div style="margin-top:10px;text-align:right;font-size:11px;font-weight:700;color:${clr};">View 3D →</div>
                     </div>
                 `;
-                card.addEventListener('mouseenter', () => { card.style.transform='translateY(-3px)'; card.style.boxShadow=`0 10px 24px rgba(0,0,0,0.12)`; card.style.borderColor=meta.accent; });
+                card.addEventListener('mouseenter', () => { card.style.transform='translateY(-3px)'; card.style.boxShadow=\`0 10px 24px rgba(0,0,0,0.12)\`; card.style.borderColor=clr; });
                 card.addEventListener('mouseleave', () => { card.style.transform=''; card.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)'; card.style.borderColor='transparent'; });
                 card.addEventListener('click', () => showItemDetail(item, data, outerContainer));
                 grid.appendChild(card);
@@ -191,8 +204,8 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 
         // Detect prefix for colour coding
         const name   = (item.item_name || item.item_code || '').toUpperCase();
-        const prefix = name.startsWith('FL') ? 'FL' : name.startsWith('FX') ? 'FX' : name.startsWith('PP') ? 'PP' : 'OTHER';
-        const ACCENT  = prefix === 'FL' ? '#34d399' : prefix === 'FX' ? '#a78bfa' : '#38bdf8';
+        const prefix = name.startsWith('FL') ? 'FL' : name.startsWith('PP') ? 'PP' : 'OTHER';
+        const ACCENT  = prefix === 'FL' ? '#34d399' : '#38bdf8';
         const BAGS_PER_PALLET = prefix === 'FL' ? 60 : 50;
         const totalBags  = Math.max(1, Math.round(item.bags || 1));
         const palletsCnt = Math.ceil(totalBags / BAGS_PER_PALLET);
@@ -233,7 +246,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
     function initItemThreeJS(item, canvasCont, outerContainer) {
         // ── Prefix-aware layout config ──
         const iname  = (item.item_name || item.item_code || '').toUpperCase();
-        const prefix = iname.startsWith('FL') ? 'FL' : iname.startsWith('FX') ? 'FX' : iname.startsWith('PP') ? 'PP' : 'OTHER';
+        const prefix = iname.startsWith('FL') ? 'FL' : iname.startsWith('PP') ? 'PP' : 'OTHER';
         const isFL   = prefix === 'FL';
 
         // FL: 6 wide × 1 deep per layer × 10 layers = 60 bags/pallet
@@ -266,8 +279,8 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         }
 
         // Accent colour per prefix
-        const ACCENT_HEX = prefix === 'FL' ? 0x34d399 : prefix === 'FX' ? 0xa78bfa : 0x38bdf8;
-        const ACCENT_CSS = prefix === 'FL' ? '#34d399' : prefix === 'FX' ? '#a78bfa' : '#38bdf8';
+        const ACCENT_HEX = prefix === 'FL' ? 0x34d399 : 0x38bdf8;
+        const ACCENT_CSS = prefix === 'FL' ? '#34d399' : '#38bdf8';
         const PALLET_COLOR = isFL ? 0xc8703a : 0xc8823a; // FL pallets slightly darker orange
 
         const totalBags    = Math.max(1, Math.round(item.bags || 1));
@@ -324,7 +337,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         bagMesh.castShadow = true; bagMesh.receiveShadow = true;
         scene.add(bagMesh);
 
-        const BAKE_EDGES = totalBags <= 1000;
+        const BAKE_EDGES = true; // Always show borders for clarity
         const edgePositions = [];
 
         // Layout pallets in rows of 5
