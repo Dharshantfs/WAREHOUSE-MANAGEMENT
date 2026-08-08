@@ -323,34 +323,42 @@ def clear_empty_batch_bays():
 @frappe.whitelist()
 def get_rm_stock():
     """
-    Fetch stock for Raw Materials items starting with 'PP' in a specific warehouse.
+    Fetch stock for Raw Materials items starting with 'PP' and 'FL' across RM and PP warehouses.
     Calculates the number of 25kg bags (actual_qty // 25) for the new 3D view.
     """
     try:
-        warehouse = "Raw Materials - JSB-1ZT"
-        
-        # Query bin for PP items in this warehouse
+        # Query bin for PP and FL items in relevant warehouses
         bins = frappe.db.sql("""
-            SELECT item_code, actual_qty 
+            SELECT item_code, actual_qty, warehouse
             FROM `tabBin` 
-            WHERE warehouse = %s 
-              AND item_code LIKE 'PP%%' 
+            WHERE (warehouse LIKE '%%Raw Material%%' OR warehouse LIKE '%%PP Warehouse%%' OR warehouse LIKE '%%RM%%')
+              AND (item_code LIKE 'PP%%' OR item_code LIKE 'FL%%') 
               AND actual_qty > 0
-        """, (warehouse,), as_dict=True)
+        """, as_dict=True)
         
-        results = []
+        grouped = {}
         for b in bins:
-            qty = float(b.actual_qty or 0)
+            ic = b.item_code
+            if ic not in grouped:
+                grouped[ic] = {"kgs": 0.0, "warehouses": set()}
+            grouped[ic]["kgs"] += float(b.actual_qty or 0)
+            if b.warehouse:
+                grouped[ic]["warehouses"].add(b.warehouse)
+                
+        results = []
+        for item_code, data in grouped.items():
+            qty = data["kgs"]
             bags = qty / 25.0
             
             # Fetch item name for better display
-            item_name = frappe.db.get_value("Item", b.item_code, "item_name") or b.item_code
+            item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
             
             results.append({
-                "item_code": b.item_code,
+                "item_code": item_code,
                 "item_name": item_name,
                 "kgs": qty,
-                "bags": round(bags, 3)
+                "bags": round(bags, 3),
+                "warehouses": list(data["warehouses"])
             })
             
         # Sort alphabetically

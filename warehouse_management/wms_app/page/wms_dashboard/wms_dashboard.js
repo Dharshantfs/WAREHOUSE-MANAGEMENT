@@ -340,11 +340,16 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         const BAKE_EDGES = true; // Always show borders for clarity
         const edgePositions = [];
 
-        // Layout pallets in rows of 5
-        const SPACING_X = PALLET_W + 14;
-        const SPACING_Z = PALLET_D + 16;
-        const totalRows = Math.ceil(palletsCount / PALLETS_PER_ROW);
-        const groupOffX = -((Math.min(palletsCount, PALLETS_PER_ROW) - 1) * SPACING_X) / 2;
+        // ── Racking Layout config ──
+        const RACK_LEVELS = isFL ? 1 : 3; 
+        const BAYS_PER_ROW = 5;
+        const SPACING_X = PALLET_W + 16;
+        const SPACING_Z = PALLET_D + 20;
+        const RACK_Y_SPACE = 65; 
+
+        const baysCount = Math.ceil(palletsCount / RACK_LEVELS);
+        const totalRows = Math.ceil(baysCount / BAYS_PER_ROW);
+        const groupOffX = -((Math.min(baysCount, BAYS_PER_ROW) - 1) * SPACING_X) / 2;
         const groupOffZ = -((totalRows - 1) * SPACING_Z) / 2;
 
         const dummy = new THREE.Object3D();
@@ -352,24 +357,35 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         let palletIdx = 0, bagIdx = 0;
 
         for (let p = 0; p < palletsCount; p++) {
-            const col = p % PALLETS_PER_ROW;
-            const row = Math.floor(p / PALLETS_PER_ROW);
+            const bayIdx = Math.floor(p / RACK_LEVELS);
+            const levelIdx = p % RACK_LEVELS;
+            const col = bayIdx % BAYS_PER_ROW;
+            const row = Math.floor(bayIdx / BAYS_PER_ROW);
             const px  = groupOffX + col * SPACING_X;
             const pz  = groupOffZ + row * SPACING_Z;
+            const py  = levelIdx * RACK_Y_SPACE; // base of the level
 
-            dummy.position.set(px, PALLET_H / 2, pz);
+            dummy.position.set(px, py + PALLET_H / 2, pz);
             dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix();
             palletMesh.setMatrixAt(palletIdx, dummy.matrix);
 
             const bagsActual = Math.max(1, p === palletsCount - 1 ? totalBags - p * BAGS_PER_PALLET : BAGS_PER_PALLET);
-            palletMetadata[palletIdx] = { pallet_num: p + 1, bags: bagsActual, total_bags: totalBags, total_kgs: item.kgs || 0, accent: ACCENT_CSS };
+            palletMetadata[palletIdx] = { 
+                bay_num: bayIdx + 1, 
+                level_num: levelIdx + 1,
+                bags: bagsActual, 
+                total_bags: totalBags, 
+                total_kgs: item.kgs || 0, 
+                accent: ACCENT_CSS,
+                warehouses: item.warehouses || []
+            };
 
             let bagCount = 0, layer = 0;
             while (bagCount < bagsActual && layer < LAYERS_MAX) {
                 for (let s = 0; s < bagOffsets.length && bagCount < bagsActual; s++) {
                     const off = bagOffsets[s];
                     const staggerX = layer % 2 === 1 ? BAG_W / 2 : 0;
-                    const by = PALLET_H + BAG_H / 2 + layer * BAG_H;
+                    const by = py + PALLET_H + BAG_H / 2 + layer * BAG_H;
                     dummy.position.set(px + off.x + staggerX, by, pz + off.z);
                     dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix();
                     bagMesh.setMatrixAt(bagIdx, dummy.matrix);
@@ -393,6 +409,33 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             const edgeBuf = new THREE.BufferGeometry();
             edgeBuf.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
             scene.add(new THREE.LineSegments(edgeBuf, bagEdgeMat));
+        }
+
+        // Draw structural rack posts if multi-level
+        if (RACK_LEVELS > 1) {
+            const postH = RACK_LEVELS * RACK_Y_SPACE + 10;
+            const postGeo = new THREE.BoxGeometry(3, postH, 3);
+            const postMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+            const postMesh = new THREE.InstancedMesh(postGeo, postMat, baysCount * 4);
+            postMesh.castShadow = true;
+            scene.add(postMesh);
+            
+            let postIdx = 0;
+            for (let b = 0; b < baysCount; b++) {
+                const col = b % BAYS_PER_ROW;
+                const row = Math.floor(b / BAYS_PER_ROW);
+                const px  = groupOffX + col * SPACING_X;
+                const pz  = groupOffZ + row * SPACING_Z;
+                
+                const w = PALLET_W / 2 + 2;
+                const d = PALLET_D / 2 + 2;
+                const corners = [[-w, -d], [w, -d], [-w, d], [w, d]];
+                corners.forEach(c => {
+                    dummy.position.set(px + c[0], postH / 2, pz + c[1]);
+                    dummy.updateMatrix();
+                    postMesh.setMatrixAt(postIdx++, dummy.matrix);
+                });
+            }
         }
 
         // Label canvas overlay
@@ -430,7 +473,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                 if (dist > 700) continue;
                 const alpha = Math.min(1, Math.max(0, (600 - dist) / 200));
                 const sc    = Math.max(0.65, Math.min(1.5, 130 / dist));
-                const fw = 62 * sc, fh = 36 * sc;
+                const fw = 80 * sc, fh = 36 * sc;
                 ctx.save();
                 ctx.globalAlpha = alpha;
                 ctx.translate(sx, sy);
@@ -439,7 +482,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                 ctx.fillStyle = '#94a3b8';
                 ctx.font = `600 ${Math.round(9*sc)}px Inter,sans-serif`;
                 ctx.textAlign = 'center';
-                ctx.fillText(`P${p+1}`, 0, -fh + 12*sc);
+                ctx.fillText(`Bay ${meta.bay_num} L${meta.level_num}`, 0, -fh + 12*sc);
                 ctx.fillStyle = '#38bdf8';
                 ctx.font = `800 ${Math.round(11*sc)}px Inter,sans-serif`;
                 ctx.fillText(`${meta.bags} bags`, 0, -fh + 26*sc);
@@ -449,9 +492,9 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
             }
         }
 
-        // Camera setup — auto-frame all pallets
+        // Camera setup — auto-frame all bays
         const extent = Math.max(
-            Math.min(palletsCount, PALLETS_PER_ROW) * SPACING_X,
+            Math.min(baysCount, BAYS_PER_ROW) * SPACING_X,
             totalRows * SPACING_Z
         );
         // For large pallet counts, use a higher camera angle and more radius
@@ -515,11 +558,12 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
                     tooltip.style.left    = (e.clientX - rect.left + 14) + 'px';
                     tooltip.style.top     = (e.clientY - rect.top  - 80) + 'px';
                     tooltip.innerHTML = `
-                        <div style="font-weight:800;font-size:15px;color:${ACCENT_CSS};margin-bottom:4px;">Pallet #${meta.pallet_num}</div>
+                        <div style="font-weight:800;font-size:15px;color:${ACCENT_CSS};margin-bottom:4px;">Bay #${meta.bay_num} &nbsp;·&nbsp; Level ${meta.level_num}</div>
                         <div style="font-size:14px;font-weight:700;margin-bottom:8px;">${meta.bags} bags on this pallet</div>
                         <div style="border-top:1px solid #334155;padding-top:6px;color:#94a3b8;font-size:12px;">
                             <div>${item.item_name || item.item_code}</div>
                             <div style="margin-top:3px;">Total: <b style="color:#e2e8f0;">${meta.total_bags} bags</b> / ${(meta.total_kgs||0).toFixed(0)} kg</div>
+                            <div style="margin-top:4px;color:${ACCENT_CSS};font-weight:600;">📍 ${(meta.warehouses || []).join(', ') || 'Warehouse'}</div>
                         </div>`;
                     cvs.style.cursor = 'pointer';
                     return;
