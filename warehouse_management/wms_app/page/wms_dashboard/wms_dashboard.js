@@ -1,4 +1,4 @@
-window.assignBay = function(batch_name) {
+﻿window.assignBay = function(batch_name) {
 	frappe.prompt([
 		{
 			label: 'New Bay Location',
@@ -76,14 +76,7 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 						container.innerHTML = '<div style="text-align: center; color: #64748b; margin-top: 50px;">No Raw Materials found.</div>';
 						return;
 					}
-					
-                    container.innerHTML = `
-                        <div id="rm-3d-canvas" style="width: 100%; height: 100%; position: relative;">
-                            <div id="rm-tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.9); color: white; padding: 12px 16px; border-radius: 8px; font-size: 14px; pointer-events: none; z-index: 10; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transform: translate(-50%, -100%); margin-top: -15px;"></div>
-                        </div>
-                    `;
-
-                    initThreeJS(data, document.getElementById('rm-3d-canvas'));
+                    showItemGrid(data, container);
 				} else {
 					container.innerHTML = '<div style="text-align: center; color: #ef4444; margin-top: 50px;">Error loading data.</div>';
 				}
@@ -91,327 +84,293 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
 		});
     }
 
-    function initThreeJS(data, container) {
-        // ── SCENE SETUP ──────────────────────────────────────────────────────────
+    // ── CARD GRID VIEW ────────────────────────────────────────────────────────
+    function showItemGrid(data, outerContainer) {
+        if (outerContainer._threeCleanup) {
+            outerContainer._threeCleanup();
+            outerContainer._threeCleanup = null;
+        }
+        outerContainer.style.overflowY = 'auto';
+        const totalBagsAll = data.reduce((s, i) => s + (i.bags || 0), 0);
+        const totalKgsAll  = data.reduce((s, i) => s + (i.kgs  || 0), 0);
+        outerContainer.innerHTML = `
+            <div style="background:linear-gradient(135deg,#1e293b,#0f172a);padding:18px 24px;border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+                <div>
+                    <h2 style="margin:0;color:#f8fafc;font-size:19px;font-weight:800;">🏭 Raw Materials Stock</h2>
+                    <div style="color:#94a3b8;font-size:13px;margin-top:4px;">${data.length} materials &nbsp;·&nbsp; ${totalBagsAll.toFixed(1)} bags &nbsp;·&nbsp; ${totalKgsAll.toFixed(0)} kg</div>
+                </div>
+                <div style="color:#64748b;font-size:12px;background:rgba(255,255,255,0.05);padding:6px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);">Click any item to view 3D pallet layout →</div>
+            </div>
+            <div id="rm-item-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;padding:20px;background:#eef2f7;"></div>
+        `;
+        const grid = outerContainer.querySelector('#rm-item-grid');
+        const BAGS_PER_PALLET = 50;
+        data.forEach((item, idx) => {
+            const bags    = Math.max(0, item.bags || 0);
+            const pallets = bags > 0 ? Math.ceil(Math.round(bags) / BAGS_PER_PALLET) : 0;
+            const hue     = (idx * 53 + 200) % 360;
+            const clr     = `hsl(${hue},65%,48%)`;
+            const clrL    = `hsl(${hue},65%,95%)`;
+            const card = document.createElement('div');
+            card.style.cssText = 'background:white;border-radius:14px;overflow:hidden;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.07);transition:all 0.18s ease;border:2px solid transparent;';
+            card.innerHTML = `
+                <div style="height:5px;background:${clr};"></div>
+                <div style="padding:16px 18px 14px;">
+                    <div style="font-weight:700;font-size:14px;color:#0f172a;line-height:1.4;margin-bottom:3px;">${item.item_name || item.item_code}</div>
+                    <div style="font-size:11px;color:#94a3b8;margin-bottom:14px;font-family:monospace;">${item.item_code}</div>
+                    <div style="display:flex;gap:8px;">
+                        <div style="flex:1;background:${clrL};border-radius:10px;padding:10px 6px;text-align:center;">
+                            <div style="font-size:22px;font-weight:900;color:${clr};line-height:1;">${bags.toFixed ? bags.toFixed(1) : bags}</div>
+                            <div style="font-size:10px;color:#94a3b8;margin-top:3px;font-weight:600;">BAGS</div>
+                        </div>
+                        <div style="flex:1;background:#f8fafc;border-radius:10px;padding:10px 6px;text-align:center;">
+                            <div style="font-size:22px;font-weight:900;color:#334155;line-height:1;">${pallets}</div>
+                            <div style="font-size:10px;color:#94a3b8;margin-top:3px;font-weight:600;">PALLETS</div>
+                        </div>
+                        <div style="flex:1;background:#f8fafc;border-radius:10px;padding:10px 6px;text-align:center;">
+                            <div style="font-size:16px;font-weight:800;color:#334155;line-height:1;">${(item.kgs||0).toFixed(0)}</div>
+                            <div style="font-size:10px;color:#94a3b8;margin-top:3px;font-weight:600;">KG</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:12px;text-align:right;font-size:12px;font-weight:600;color:${clr};">View 3D →</div>
+                </div>
+            `;
+            card.addEventListener('mouseenter', () => { card.style.transform='translateY(-4px)'; card.style.boxShadow='0 12px 28px rgba(0,0,0,0.14)'; card.style.borderColor=clr; });
+            card.addEventListener('mouseleave', () => { card.style.transform=''; card.style.boxShadow='0 2px 10px rgba(0,0,0,0.07)'; card.style.borderColor='transparent'; });
+            card.addEventListener('click', () => showItemDetail(item, data, outerContainer));
+            grid.appendChild(card);
+        });
+    }
+
+    // ── INDIVIDUAL ITEM DETAIL VIEW ───────────────────────────────────────────
+    function showItemDetail(item, allData, outerContainer) {
+        if (outerContainer._threeCleanup) { outerContainer._threeCleanup(); outerContainer._threeCleanup = null; }
+        outerContainer.style.overflowY = 'hidden';
+        const BAGS_PER_PALLET = 50;
+        const totalBags  = Math.max(1, Math.round(item.bags || 1));
+        const palletsCnt = Math.ceil(totalBags / BAGS_PER_PALLET);
+        outerContainer.innerHTML = `
+            <div style="background:linear-gradient(135deg,#1e293b,#0f172a);padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                <button id="rm-back-btn" style="background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;">← All Items</button>
+                <div style="flex:1;min-width:0;">
+                    <div style="color:#f8fafc;font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.item_name || item.item_code}</div>
+                    <div style="color:#64748b;font-size:12px;margin-top:2px;">${item.item_code} &nbsp;·&nbsp; ${totalBags} bags &nbsp;·&nbsp; ${palletsCnt} pallets &nbsp;·&nbsp; ${(item.kgs||0).toFixed(0)} kg</div>
+                </div>
+                <div style="display:flex;gap:10px;flex-shrink:0;">
+                    <div style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.3);border-radius:8px;padding:8px 14px;text-align:center;">
+                        <div style="color:#38bdf8;font-size:20px;font-weight:900;">${palletsCnt}</div>
+                        <div style="color:#64748b;font-size:10px;font-weight:600;">PALLETS</div>
+                    </div>
+                    <div style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.3);border-radius:8px;padding:8px 14px;text-align:center;">
+                        <div style="color:#38bdf8;font-size:20px;font-weight:900;">${totalBags}</div>
+                        <div style="color:#64748b;font-size:10px;font-weight:600;">BAGS</div>
+                    </div>
+                </div>
+            </div>
+            <div id="rm-detail-canvas" style="width:100%;height:calc(85vh - 58px);position:relative;overflow:hidden;background:#eef2f7;">
+                <div id="rm-tooltip" style="position:absolute;display:none;background:rgba(15,23,42,0.93);color:white;padding:12px 16px;border-radius:10px;font-size:13px;pointer-events:none;z-index:20;box-shadow:0 4px 20px rgba(0,0,0,0.4);min-width:170px;"></div>
+            </div>
+        `;
+        const backBtn = document.getElementById('rm-back-btn');
+        backBtn.addEventListener('mouseenter', () => backBtn.style.background = '#475569');
+        backBtn.addEventListener('mouseleave', () => backBtn.style.background = '#334155');
+        backBtn.onclick = () => showItemGrid(allData, outerContainer);
+        requestAnimationFrame(() => initItemThreeJS(item, document.getElementById('rm-detail-canvas'), outerContainer));
+    }
+
+    // ── THREE.JS SINGLE-ITEM 3D VIEW ─────────────────────────────────────────
+    function initItemThreeJS(item, canvasCont, outerContainer) {
+        const BAGS_PER_PALLET = 50;
+        const BAGS_PER_LAYER  = 10;   // 5 wide × 2 deep per layer
+        const LAYERS_MAX      = 5;    // 5 layers × 10 bags = 50 max
+        const PALLETS_PER_ROW = 5;
+
+        // Pallet: 60 × 4 × 50
+        const PALLET_W = 60, PALLET_H = 4, PALLET_D = 50;
+        // Bag: 5 cols × BAG_W=11 = 55 (fits 60), 2 rows × BAG_D=23 = 46 (fits 50)
+        const BAG_W = 11, BAG_H = 5.5, BAG_D = 23;
+
+        // 5×2 grid of bag positions per layer (relative to pallet center)
+        const bagOffsets = [];
+        for (let c = 0; c < 5; c++) {
+            for (let r = 0; r < 2; r++) {
+                bagOffsets.push({ x: (c - 2) * BAG_W, z: (r - 0.5) * BAG_D });
+            }
+        }
+
+        const totalBags    = Math.max(1, Math.round(item.bags || 1));
+        const palletsCount = Math.ceil(totalBags / BAGS_PER_PALLET);
+
+        // Scene
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xf0f4f8);
-        scene.fog = new THREE.Fog(0xf0f4f8, 800, 2500);
-
-        const W = container.clientWidth || 800;
-        const H = container.clientHeight || 600;
-        const camera = new THREE.PerspectiveCamera(55, W / H, 0.5, 5000);
-
+        scene.background = new THREE.Color(0xeef2f7);
+        scene.fog = new THREE.FogExp2(0xeef2f7, 0.0008);
+        const W = canvasCont.clientWidth || 900;
+        const H = canvasCont.clientHeight || 550;
+        const camera = new THREE.PerspectiveCamera(48, W / H, 0.5, 4000);
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(W, H);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        container.appendChild(renderer.domElement);
+        canvasCont.appendChild(renderer.domElement);
 
-        // ── FLOOR GRID ───────────────────────────────────────────────────────────
-        const gridHelper = new THREE.GridHelper(3000, 60, 0xcccccc, 0xe0e0e0);
-        gridHelper.position.y = 0;
-        scene.add(gridHelper);
+        // Floor
+        const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ color: 0xdce4ef }));
+        floorMesh.rotation.x = -Math.PI / 2;
+        floorMesh.receiveShadow = true;
+        scene.add(floorMesh);
+        scene.add(new THREE.GridHelper(3000, 80, 0xc0cad8, 0xd0dae8));
 
-        // ── LIGHTING ─────────────────────────────────────────────────────────────
+        // Lighting
         scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-        const sun = new THREE.DirectionalLight(0xfff8e7, 1.0);
-        sun.position.set(300, 600, 400);
+        const sun = new THREE.DirectionalLight(0xfff6e8, 1.3);
+        sun.position.set(300, 500, 250);
         sun.castShadow = true;
         sun.shadow.mapSize.set(2048, 2048);
-        sun.shadow.camera.left = -800;
-        sun.shadow.camera.right = 800;
-        sun.shadow.camera.top = 800;
-        sun.shadow.camera.bottom = -800;
-        sun.shadow.bias = -0.001;
+        sun.shadow.camera.left = -600; sun.shadow.camera.right = 600;
+        sun.shadow.camera.top = 600;   sun.shadow.camera.bottom = -600;
+        sun.shadow.bias = -0.002;
         scene.add(sun);
-        const fillLight = new THREE.DirectionalLight(0xc8e0ff, 0.3);
-        fillLight.position.set(-200, 200, -300);
-        scene.add(fillLight);
+        const rimLight = new THREE.DirectionalLight(0xaac8f0, 0.35);
+        rimLight.position.set(-300, 200, -300);
+        scene.add(rimLight);
 
-        // ── GEOMETRY HELPERS ─────────────────────────────────────────────────────
-        // Sack: flat-ish rounded cylinder (like a filled bag lying flat)
-        // Radialtop slightly less than base to look "tied at top"
-        const SACK_R  = 8.5;   // radius (sack width ≈ 17 units)
-        const SACK_RT = 7.0;   // top radius (tapered)
-        const SACK_H  = 4.5;   // height of each sack layer
-        const SACK_SEG = 10;   // cylinder segments (low for perf, still round)
+        // Geometries
+        const palletGeo = new THREE.BoxGeometry(PALLET_W, PALLET_H, PALLET_D);
+        const palletMat = new THREE.MeshPhongMaterial({ color: 0xc8823a, shininess: 25 });
+        const bagGeo    = new THREE.BoxGeometry(BAG_W, BAG_H, BAG_D);
+        const bagMat    = new THREE.MeshPhongMaterial({ color: 0xcfd4de, shininess: 55, specular: new THREE.Color(0x8899bb) });
+        const bagEdgeGeo = new THREE.EdgesGeometry(bagGeo);
+        const bagEdgeMat = new THREE.LineBasicMaterial({ color: 0x5577aa });
 
-        const sackGeo = new THREE.CylinderGeometry(SACK_RT, SACK_R, SACK_H, SACK_SEG, 1);
-        // Silver/metallic sack colour
-        const sackMat = new THREE.MeshLambertMaterial({ color: 0xc8cdd4 });
-
-        // Edge outline geometry for border visibility
-        const sackEdgeGeo = new THREE.EdgesGeometry(sackGeo);
-        const sackEdgeMat = new THREE.LineBasicMaterial({ color: 0x445566, linewidth: 1 });
-
-        // Pallet
-        const palletGeo = new THREE.BoxGeometry(55, 3.5, 47);
-        const palletMat = new THREE.MeshLambertMaterial({ color: 0xc8843a });
-
-        // ── COUNT INSTANCES ──────────────────────────────────────────────────────
-        let totalPallets = 0;
-        let totalSacks   = 0;
-        const SACKS_PER_PALLET = 50;
-        const SACKS_PER_LAYER  = 5;   // 5 sacks per layer (3+2 stagger)
-        const LAYERS_MAX       = 10;
-
-        data.forEach(item => {
-            let bags = Math.max(1, Math.round(item.bags));
-            let pallets = Math.ceil(bags / SACKS_PER_PALLET);
-            totalPallets += pallets;
-            totalSacks   += bags;
-        });
-
-        // Edge baking only for reasonable sack counts (perf guard)
-        const BAKE_EDGES = totalSacks <= 600;
-
-        const palletMesh = new THREE.InstancedMesh(palletGeo, palletMat, totalPallets);
-        palletMesh.castShadow = true;
-        palletMesh.receiveShadow = true;
+        // Instanced meshes
+        const palletMesh = new THREE.InstancedMesh(palletGeo, palletMat, palletsCount);
+        palletMesh.castShadow = true; palletMesh.receiveShadow = true;
         scene.add(palletMesh);
+        const bagMesh = new THREE.InstancedMesh(bagGeo, bagMat, totalBags);
+        bagMesh.castShadow = true; bagMesh.receiveShadow = true;
+        scene.add(bagMesh);
 
-        const sackMesh = new THREE.InstancedMesh(sackGeo, sackMat, totalSacks);
-        sackMesh.castShadow = true;
-        sackMesh.receiveShadow = true;
-        scene.add(sackMesh);
-
-        // Edge lines: one LineSegments per sack – BUT for thousands of sacks that's too many objects.
-        // Instead we bake all edges into a BufferGeometry merged together for perf.
-        // We'll collect positions for one merged EdgeMesh.
+        const BAKE_EDGES = totalBags <= 1000;
         const edgePositions = [];
 
-        // ── LAYOUT ──────────────────────────────────────────────────────────────
-        // Items are placed in SEPARATE ZONES, each zone has its own row block.
-        // Gap between zones = 2 empty rows.
-        const COL_COUNT  = 5;   // pallets per row inside a zone
-        const SPACING_X  = 70;  // spacing between pallet columns
-        const SPACING_Z  = 75;  // spacing between pallet rows
-        const ZONE_GAP_Z = 150; // extra Z gap between material groups
+        // Layout pallets in rows of 5
+        const SPACING_X = PALLET_W + 14;
+        const SPACING_Z = PALLET_D + 16;
+        const totalRows = Math.ceil(palletsCount / PALLETS_PER_ROW);
+        const groupOffX = -((Math.min(palletsCount, PALLETS_PER_ROW) - 1) * SPACING_X) / 2;
+        const groupOffZ = -((totalRows - 1) * SPACING_Z) / 2;
 
         const dummy = new THREE.Object3D();
         const palletMetadata = {};
+        let palletIdx = 0, bagIdx = 0;
 
-        let palletIndex = 0;
-        let sackIndex   = 0;
-        let zoneZ       = 0;   // running Z cursor between zones
+        for (let p = 0; p < palletsCount; p++) {
+            const col = p % PALLETS_PER_ROW;
+            const row = Math.floor(p / PALLETS_PER_ROW);
+            const px  = groupOffX + col * SPACING_X;
+            const pz  = groupOffZ + row * SPACING_Z;
 
-        // For label rendering (CSS overlay)
-        const zoneLabels = [];
+            dummy.position.set(px, PALLET_H / 2, pz);
+            dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix();
+            palletMesh.setMatrixAt(palletIdx, dummy.matrix);
 
-        data.forEach((item, itemIdx) => {
-            let totalBags = Math.max(1, Math.round(item.bags));
-            let palletsCount = Math.ceil(totalBags / SACKS_PER_PALLET);
+            const bagsActual = Math.max(1, p === palletsCount - 1 ? totalBags - p * BAGS_PER_PALLET : BAGS_PER_PALLET);
+            palletMetadata[palletIdx] = { pallet_num: p + 1, bags: bagsActual, total_bags: totalBags, total_kgs: item.kgs || 0 };
 
-            // Calculate bounding box of this zone to position the label correctly
-            let rows = Math.ceil(palletsCount / COL_COUNT);
-            // Center X = midpoint of the pallet columns in this zone
-            let zoneCols = Math.min(palletsCount, COL_COUNT);
-            let zoneCenterX = ((zoneCols - 1) * SPACING_X) / 2 - ((zoneCols - 1) * SPACING_X) / 2; // always 0 (symmetric)
-            let zoneDepth = rows * SPACING_Z;
-
-            zoneLabels.push({
-                x: zoneCenterX,
-                y: totalBags > 0 ? (LAYERS_MAX * SACK_H + 30) : 20,
-                z: zoneZ + zoneDepth / 2,
-                text: item.item_name || item.item_code,
-                code: item.item_code,
-                bags: item.bags,
-                kgs: item.kgs,
-            });
-
-            let remaining = totalBags;
-            let col = 0, row = 0;
-
-            for (let p = 0; p < palletsCount; p++) {
-                let bagsHere = Math.min(remaining, SACKS_PER_PALLET);
-                remaining -= bagsHere;
-
-                let px = col * SPACING_X - ((Math.min(palletsCount, COL_COUNT) - 1) * SPACING_X) / 2;
-                let pz = zoneZ + row * SPACING_Z;
-
-                // Place pallet
-                dummy.position.set(px, 1.75, pz);
-                dummy.rotation.set(0, 0, 0);
-                dummy.scale.set(1, 1, 1);
-                dummy.updateMatrix();
-                palletMesh.setMatrixAt(palletIndex, dummy.matrix);
-
-                palletMetadata[palletIndex] = {
-                    item_name: item.item_name,
-                    item_code: item.item_code,
-                    bags: bagsHere,
-                    total_kgs: item.kgs,
-                    total_bags: item.bags.toFixed ? item.bags.toFixed(3) : item.bags,
-                };
-
-                // Place sacks on this pallet
-                let sackCount = 0;
-                let layer = 0;
-                while (sackCount < bagsHere && layer < LAYERS_MAX) {
-                    // Alternate row orientation for stagger effect (like real sacks)
-                    let isOdd = layer % 2 === 1;
-                    for (let s = 0; s < SACKS_PER_LAYER && sackCount < bagsHere; s++) {
-                        // 3-2 stagger: odd rows offset
-                        let col3 = s % 3;
-                        let row2 = Math.floor(s / 3);
-                        let sx = (col3 - 1) * (SACK_R * 2 + 1) + (isOdd ? (SACK_R + 0.5) : 0);
-                        let sz = (row2 - 0.5) * (SACK_R * 2 + 1);
-
-                        // Slight random jitter for realism
-                        let jx = (Math.random() - 0.5) * 1.2;
-                        let jz = (Math.random() - 0.5) * 1.2;
-
-                        let sy = 3.5 + SACK_H / 2 + layer * SACK_H;
-
-                        dummy.position.set(px + sx + jx, sy, pz + sz + jz);
-                        // Slight random Y rotation per sack for realism
-                        dummy.rotation.set(0, (Math.random() - 0.5) * 0.15, 0);
-                        dummy.scale.set(1, 1, 1);
-                        dummy.updateMatrix();
-                        sackMesh.setMatrixAt(sackIndex, dummy.matrix);
-
-                        // Bake edge positions (transform manually for merged edges)
-                        if (BAKE_EDGES) {
-                            const mat = dummy.matrix;
-                            const pos = sackEdgeGeo.attributes.position;
-                            for (let ei = 0; ei < pos.count; ei++) {
-                                let ex = pos.getX(ei), ey = pos.getY(ei), ez = pos.getZ(ei);
-                                let v = new THREE.Vector3(ex, ey, ez).applyMatrix4(mat);
-                                edgePositions.push(v.x, v.y, v.z);
-                            }
+            let bagCount = 0, layer = 0;
+            while (bagCount < bagsActual && layer < LAYERS_MAX) {
+                for (let s = 0; s < bagOffsets.length && bagCount < bagsActual; s++) {
+                    const off = bagOffsets[s];
+                    const staggerX = layer % 2 === 1 ? BAG_W / 2 : 0;
+                    const by = PALLET_H + BAG_H / 2 + layer * BAG_H;
+                    dummy.position.set(px + off.x + staggerX, by, pz + off.z);
+                    dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix();
+                    bagMesh.setMatrixAt(bagIdx, dummy.matrix);
+                    if (BAKE_EDGES) {
+                        const mat = dummy.matrix, pos = bagEdgeGeo.attributes.position;
+                        for (let ei = 0; ei < pos.count; ei++) {
+                            const v = new THREE.Vector3(pos.getX(ei), pos.getY(ei), pos.getZ(ei)).applyMatrix4(mat);
+                            edgePositions.push(v.x, v.y, v.z);
                         }
-
-                        sackIndex++;
-                        sackCount++;
                     }
-                    layer++;
+                    bagIdx++; bagCount++;
                 }
-
-                palletIndex++;
-                col++;
-                if (col >= COL_COUNT) { col = 0; row++; }
+                layer++;
             }
-
-            // Advance Z to next zone
-            zoneZ += Math.ceil(palletsCount / COL_COUNT) * SPACING_Z + ZONE_GAP_Z;
-        });
-
+            palletIdx++;
+        }
         palletMesh.instanceMatrix.needsUpdate = true;
-        sackMesh.instanceMatrix.needsUpdate = true;
+        bagMesh.instanceMatrix.needsUpdate    = true;
 
-        // ── MERGED EDGE LINES ─────────────────────────────────────────────────────
         if (edgePositions.length > 0) {
             const edgeBuf = new THREE.BufferGeometry();
             edgeBuf.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
-            const edgeLines = new THREE.LineSegments(edgeBuf, sackEdgeMat);
-            scene.add(edgeLines);
+            scene.add(new THREE.LineSegments(edgeBuf, bagEdgeMat));
         }
 
-        // ── CSS LABELS OVERLAY ───────────────────────────────────────────────────
-        // We create a 2D canvas overlay that follows the 3D positions
+        // Label canvas overlay
         const labelCanvas = document.createElement('canvas');
-        labelCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;width:100%;height:100%;';
-        container.style.position = 'relative';
-        container.appendChild(labelCanvas);
+        labelCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
+        canvasCont.appendChild(labelCanvas);
 
-        function projectToScreen(x, y, z) {
-            const v = new THREE.Vector3(x, y, z).project(camera);
-            return {
-                sx: ((v.x + 1) / 2) * labelCanvas.width,
-                sy: ((-v.y + 1) / 2) * labelCanvas.height,
-                behind: v.z > 1
-            };
+        function canvasRR(ctx, x, y, w, h, r) {
+            if (typeof ctx.roundRect === 'function') { ctx.roundRect(x, y, w, h, r); return; }
+            ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+            ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+            ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+            ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
         }
 
-        // Polyfill ctx.roundRect for older browsers
-        function canvasRoundRect(ctx, x, y, w, h, r) {
-            if (typeof ctx.roundRect === 'function') {
-                ctx.roundRect(x, y, w, h, r);
-            } else {
-                ctx.moveTo(x + r, y);
-                ctx.lineTo(x + w - r, y);
-                ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-                ctx.lineTo(x + w, y + h - r);
-                ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-                ctx.lineTo(x + r, y + h);
-                ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-                ctx.lineTo(x, y + r);
-                ctx.quadraticCurveTo(x, y, x + r, y);
-                ctx.closePath();
-            }
-        }
-
-        let _lblW = 0, _lblH = 0; // track size to avoid redundant canvas resets
-        function drawLabels() {
-            const cw = container.clientWidth;
-            const ch = container.clientHeight;
-            // Only resize when dimensions actually changed (avoids clearing context unnecessarily)
+        function drawPalletLabels() {
+            const cw = canvasCont.clientWidth, ch = canvasCont.clientHeight;
             if (labelCanvas.width !== cw || labelCanvas.height !== ch) {
-                labelCanvas.width  = cw;
-                labelCanvas.height = ch;
+                labelCanvas.width = cw; labelCanvas.height = ch;
+                labelCanvas.style.width = cw + 'px'; labelCanvas.style.height = ch + 'px';
             }
             const ctx = labelCanvas.getContext('2d');
             ctx.clearRect(0, 0, cw, ch);
-
-            zoneLabels.forEach(lbl => {
-                const p = projectToScreen(lbl.x, lbl.y, lbl.z);
-                if (p.behind) return;
-                const dist = camera.position.distanceTo(new THREE.Vector3(lbl.x, 0, lbl.z));
-                if (dist > 1800) return;
-                const alpha = Math.min(1, Math.max(0, (1500 - dist) / 600));
-                const scale = Math.max(0.6, Math.min(1.4, 600 / dist));
-
+            for (let p = 0; p < palletsCount; p++) {
+                palletMesh.getMatrixAt(p, dummy.matrix);
+                dummy.position.setFromMatrixPosition(dummy.matrix);
+                const meta = palletMetadata[p];
+                const stackTop = PALLET_H + Math.ceil(meta.bags / BAGS_PER_LAYER) * BAG_H + 8;
+                const wp = new THREE.Vector3(dummy.position.x, stackTop, dummy.position.z).project(camera);
+                if (wp.z > 1) continue;
+                const sx = ((wp.x + 1) / 2) * cw;
+                const sy = ((-wp.y + 1) / 2) * ch;
+                const dist = camera.position.distanceTo(dummy.position);
+                if (dist > 700) continue;
+                const alpha = Math.min(1, Math.max(0, (600 - dist) / 200));
+                const sc    = Math.max(0.65, Math.min(1.5, 130 / dist));
+                const fw = 62 * sc, fh = 36 * sc;
                 ctx.save();
                 ctx.globalAlpha = alpha;
-                ctx.translate(p.sx, p.sy);
-
-                // Background pill
-                const name = lbl.text.length > 30 ? lbl.text.substring(0, 28) + '…' : lbl.text;
-                const info = `${lbl.bags.toFixed ? lbl.bags.toFixed(1) : lbl.bags} bags  |  ${lbl.kgs} kg`;
-                const fw = Math.max(name.length, info.length) * 7 * scale + 24;
-                const fh = 52 * scale;
-
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-                ctx.beginPath();
-                canvasRoundRect(ctx, -fw/2, -fh, fw, fh, 8 * scale);
-                ctx.fill();
-
-                ctx.fillStyle = '#f0f9ff';
-                ctx.font = `bold ${Math.round(13 * scale)}px Inter, sans-serif`;
+                ctx.translate(sx, sy);
+                ctx.fillStyle = 'rgba(15,23,42,0.88)';
+                ctx.beginPath(); canvasRR(ctx, -fw/2, -fh, fw, fh, 5*sc); ctx.fill();
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = `600 ${Math.round(9*sc)}px Inter,sans-serif`;
                 ctx.textAlign = 'center';
-                ctx.fillText(name, 0, -fh + 18 * scale);
-
+                ctx.fillText(`P${p+1}`, 0, -fh + 12*sc);
                 ctx.fillStyle = '#38bdf8';
-                ctx.font = `${Math.round(11 * scale)}px Inter, sans-serif`;
-                ctx.fillText(info, 0, -fh + 34 * scale);
-
-                // Arrow down
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-                ctx.beginPath();
-                ctx.moveTo(-7 * scale, 0);
-                ctx.lineTo(7 * scale, 0);
-                ctx.lineTo(0, 8 * scale);
-                ctx.closePath();
-                ctx.fill();
-
+                ctx.font = `800 ${Math.round(11*sc)}px Inter,sans-serif`;
+                ctx.fillText(`${meta.bags} bags`, 0, -fh + 26*sc);
+                ctx.fillStyle = 'rgba(15,23,42,0.88)';
+                ctx.beginPath(); ctx.moveTo(-5*sc,0); ctx.lineTo(5*sc,0); ctx.lineTo(0,6*sc); ctx.closePath(); ctx.fill();
                 ctx.restore();
-            });
+            }
         }
 
-        // ── CAMERA CONTROLLER ────────────────────────────────────────────────────
-        // Supports: drag to orbit, scroll to zoom (very close), WASD to pan
-        let isDragging = false;
-        let prevMouse = { x: 0, y: 0 };
-
-        // Named handler so we can properly remove it on cleanup
-        function onMouseUp() { isDragging = false; }
-
-        // Start at a good overview position
-        let camTarget = new THREE.Vector3(0, 0, zoneZ / 2); // center on all zones
-        let camRadius = Math.max(400, zoneZ * 0.6);
-        let camTheta  = -Math.PI / 6;   // horizontal angle
-        let camPhi    = Math.PI / 4;    // vertical angle
+        // Camera setup — center on full pallet group
+        const extent = Math.max(
+            Math.min(palletsCount, PALLETS_PER_ROW) * SPACING_X,
+            totalRows * SPACING_Z
+        );
+        let camRadius = Math.max(200, extent * 0.85);
+        let camTheta = -0.4, camPhi = 0.55;
+        const camTarget = new THREE.Vector3(0, 15, 0);
 
         function rebuildCamera() {
             camera.position.set(
@@ -423,143 +382,120 @@ frappe.pages['wms_dashboard'].on_page_load = function(wrapper) {
         }
         rebuildCamera();
 
-        const canvas = renderer.domElement;
+        let isDragging = false, prevMouse = { x: 0, y: 0 };
+        const keys = {};
+        function onMouseUp()  { isDragging = false; }
+        function onKeyDown(e) { keys[e.key.toLowerCase()] = true; }
+        function onKeyUp(e)   { keys[e.key.toLowerCase()] = false; }
 
-        // ── TOOLTIP & RAYCASTER ──────────────────────────────────────────────────
-        const tooltip = document.getElementById('rm-tooltip');
+        const cvs = renderer.domElement;
+        cvs.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+        window.addEventListener('mouseup',  onMouseUp);
+        window.addEventListener('keydown',  onKeyDown);
+        window.addEventListener('keyup',    onKeyUp);
+
+        const tooltip   = document.getElementById('rm-tooltip');
         const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
+        const mouse     = new THREE.Vector2();
 
-        canvas.addEventListener('mousedown', e => {
-            isDragging = true;
-            prevMouse = { x: e.clientX, y: e.clientY };
-        });
-        window.addEventListener('mouseup', onMouseUp);
-
-        canvas.addEventListener('mousemove', e => {
-            if (!isDragging) {
-                // Hover tooltip
-                let rect = canvas.getBoundingClientRect();
-                mouse.x = ((e.clientX - rect.left) / canvas.clientWidth) * 2 - 1;
-                mouse.y = -((e.clientY - rect.top) / canvas.clientHeight) * 2 + 1;
-                raycaster.setFromCamera(mouse, camera);
-
-                const intersects = raycaster.intersectObjects([palletMesh, sackMesh]);
-                if (intersects.length > 0) {
-                    let hitPoint = intersects[0].point;
-                    let closestId = -1, minD = Infinity;
-                    for (let i = 0; i < palletIndex; i++) {
-                        palletMesh.getMatrixAt(i, dummy.matrix);
-                        dummy.position.setFromMatrixPosition(dummy.matrix);
-                        let d = dummy.position.distanceTo(hitPoint);
-                        if (d < minD) { minD = d; closestId = i; }
-                    }
-                    if (closestId !== -1 && minD < 80) {
-                        let meta = palletMetadata[closestId];
-                        if (meta) {
-                            tooltip.style.display = 'block';
-                            tooltip.style.left = (e.clientX - canvas.getBoundingClientRect().left) + 'px';
-                            tooltip.style.top  = (e.clientY - canvas.getBoundingClientRect().top - 15) + 'px';
-                            tooltip.innerHTML = `
-                                <div style="font-weight:700;font-size:15px;margin-bottom:4px;">${meta.item_name}</div>
-                                <div style="color:#94a3b8;font-size:12px;margin-bottom:8px;">${meta.item_code}</div>
-                                <div style="color:#e2e8f0;">This Pallet: <span style="font-weight:700;color:#38bdf8;">${meta.bags} bags</span></div>
-                                <div style="margin-top:6px;padding-top:6px;border-top:1px solid #334155;color:#cbd5e1;">
-                                    Total: <b>${meta.total_kgs} kg</b> &nbsp;(${meta.total_bags} bags)
-                                </div>`;
-                            canvas.style.cursor = 'pointer';
-                            return;
-                        }
-                    }
-                }
-                tooltip.style.display = 'none';
-                canvas.style.cursor = 'default';
+        cvs.addEventListener('mousemove', e => {
+            if (isDragging) {
+                const dx = e.clientX - prevMouse.x, dy = e.clientY - prevMouse.y;
+                prevMouse = { x: e.clientX, y: e.clientY };
+                camTheta -= dx * 0.006;
+                camPhi = Math.max(0.05, Math.min(Math.PI/2 - 0.05, camPhi - dy * 0.006));
+                rebuildCamera(); tooltip.style.display = 'none';
                 return;
             }
-
-            let dx = e.clientX - prevMouse.x;
-            let dy = e.clientY - prevMouse.y;
-            prevMouse = { x: e.clientX, y: e.clientY };
-            camTheta -= dx * 0.005;
-            camPhi    = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, camPhi - dy * 0.005));
-            rebuildCamera();
+            const rect = cvs.getBoundingClientRect();
+            mouse.x  =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+            mouse.y  = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const hits = raycaster.intersectObjects([palletMesh, bagMesh]);
+            if (hits.length > 0) {
+                const hitPt = hits[0].point;
+                let closestId = -1, minD = Infinity;
+                for (let i = 0; i < palletIdx; i++) {
+                    palletMesh.getMatrixAt(i, dummy.matrix);
+                    dummy.position.setFromMatrixPosition(dummy.matrix);
+                    const d = dummy.position.distanceTo(hitPt);
+                    if (d < minD) { minD = d; closestId = i; }
+                }
+                if (closestId >= 0 && minD < 90) {
+                    const meta = palletMetadata[closestId];
+                    tooltip.style.display = 'block';
+                    tooltip.style.left    = (e.clientX - rect.left + 14) + 'px';
+                    tooltip.style.top     = (e.clientY - rect.top  - 80) + 'px';
+                    tooltip.innerHTML = `
+                        <div style="font-weight:800;font-size:15px;color:#38bdf8;margin-bottom:4px;">Pallet #${meta.pallet_num}</div>
+                        <div style="font-size:14px;font-weight:700;margin-bottom:8px;">${meta.bags} bags on this pallet</div>
+                        <div style="border-top:1px solid #334155;padding-top:6px;color:#94a3b8;font-size:12px;">
+                            <div>${item.item_name || item.item_code}</div>
+                            <div style="margin-top:3px;">Total: <b style="color:#e2e8f0;">${meta.total_bags} bags</b> / ${(meta.total_kgs||0).toFixed(0)} kg</div>
+                        </div>`;
+                    cvs.style.cursor = 'pointer';
+                    return;
+                }
+            }
+            tooltip.style.display = 'none'; cvs.style.cursor = 'default';
         });
 
-        // Scroll zoom – allow very close (radius 30) so user can "walk in"
-        canvas.addEventListener('wheel', e => {
+        cvs.addEventListener('wheel', e => {
             e.preventDefault();
-            camRadius += e.deltaY * 0.4;
-            camRadius = Math.max(30, Math.min(2500, camRadius));
+            camRadius = Math.max(25, Math.min(2500, camRadius + e.deltaY * 0.45));
             rebuildCamera();
         }, { passive: false });
 
-        // WASD pan (moves the look-at target)
-        const keys = {};
-        function onKeyDown(e) { keys[e.key.toLowerCase()] = true; }
-        function onKeyUp(e)   { keys[e.key.toLowerCase()] = false; }
-        window.addEventListener('keydown', onKeyDown);
-        window.addEventListener('keyup',   onKeyUp);
-
         function handleKeys() {
-            const speed = camRadius * 0.008;
-            const right = new THREE.Vector3();
-            const forward = new THREE.Vector3();
-            camera.getWorldDirection(forward);
-            forward.y = 0; forward.normalize();
+            const speed = camRadius * 0.012;
+            const forward = new THREE.Vector3(), right = new THREE.Vector3();
+            camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
             right.crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
-
-            if (keys['w'] || keys['arrowup'])    { camTarget.addScaledVector(forward,  speed); }
-            if (keys['s'] || keys['arrowdown'])  { camTarget.addScaledVector(forward, -speed); }
-            if (keys['a'] || keys['arrowleft'])  { camTarget.addScaledVector(right,   -speed); }
-            if (keys['d'] || keys['arrowright']) { camTarget.addScaledVector(right,    speed); }
-            if (keys['q'])                        { camTarget.y += speed * 0.5; }
-            if (keys['e'])                        { camTarget.y = Math.max(0, camTarget.y - speed * 0.5); }
+            if (keys['w'] || keys['arrowup'])    camTarget.addScaledVector(forward,  speed);
+            if (keys['s'] || keys['arrowdown'])  camTarget.addScaledVector(forward, -speed);
+            if (keys['a'] || keys['arrowleft'])  camTarget.addScaledVector(right,   -speed);
+            if (keys['d'] || keys['arrowright']) camTarget.addScaledVector(right,    speed);
+            if (keys['q']) camTarget.y += speed * 0.5;
+            if (keys['e']) camTarget.y = Math.max(0, camTarget.y - speed * 0.5);
             rebuildCamera();
         }
 
-
-        // ── HUD – controls hint ──────────────────────────────────────────────────
+        // HUD hint
         const hud = document.createElement('div');
-        hud.style.cssText = `
-            position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-            background: rgba(15,23,42,0.75); color: #94a3b8;
-            font: 12px Inter,sans-serif; padding: 8px 18px; border-radius: 20px;
-            pointer-events: none; white-space: nowrap; backdrop-filter: blur(4px);
-            border: 1px solid rgba(255,255,255,0.08);`;
+        hud.style.cssText = 'position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.78);color:#94a3b8;font:12px Inter,sans-serif;padding:8px 20px;border-radius:20px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.08);';
         hud.textContent = '🖱 Drag to orbit  •  Scroll to zoom in/out  •  WASD / Arrow keys to pan';
-        container.appendChild(hud);
+        canvasCont.appendChild(hud);
 
-        // ── RENDER LOOP ──────────────────────────────────────────────────────────
+        // Render loop
         let frameId;
         function animate() {
             frameId = requestAnimationFrame(animate);
             handleKeys();
-            drawLabels();
+            drawPalletLabels();
             renderer.render(scene, camera);
         }
         animate();
 
-        // ── RESIZE ───────────────────────────────────────────────────────────────
         const resizeObs = new ResizeObserver(() => {
-            if (!container) return;
-            const w = container.clientWidth, h = container.clientHeight;
-            camera.aspect = w / h;
-            camera.updateProjectionMatrix();
-            renderer.setSize(w, h);
+            if (!canvasCont) return;
+            const w = canvasCont.clientWidth, h = canvasCont.clientHeight;
+            camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h);
         });
-        resizeObs.observe(container);
+        resizeObs.observe(canvasCont);
 
-        // Cleanup when container removed
+        function cleanup() {
+            cancelAnimationFrame(frameId);
+            resizeObs.disconnect();
+            mutObs.disconnect();
+            window.removeEventListener('mouseup',  onMouseUp);
+            window.removeEventListener('keydown',  onKeyDown);
+            window.removeEventListener('keyup',    onKeyUp);
+            renderer.dispose();
+        }
+        outerContainer._threeCleanup = cleanup;
+
         const mutObs = new MutationObserver(() => {
-            if (!document.body.contains(container)) {
-                cancelAnimationFrame(frameId);
-                resizeObs.disconnect();
-                mutObs.disconnect();
-                // Properly remove the named mouseup handler (anonymous arrow functions can't be removed)
-                window.removeEventListener('mouseup', onMouseUp);
-                window.removeEventListener('keydown', onKeyDown);
-                window.removeEventListener('keyup', onKeyUp);
-            }
+            if (!document.body.contains(canvasCont)) cleanup();
         });
         mutObs.observe(document.body, { childList: true, subtree: true });
     }
