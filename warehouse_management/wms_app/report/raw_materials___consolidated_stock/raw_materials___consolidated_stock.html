@@ -110,6 +110,7 @@
                 <th>NAME</th>
                 <th>JAYASHREE [ KGS ]</th>
                 <th>THUSMAA [ KGS ]</th>
+                <th>WAREHOUSE [ KGS ]</th>
                 <th>TOTAL [ KGS ]</th>
             </tr>
         </thead>
@@ -119,7 +120,7 @@
             %}
                 {% if (!row.s_no && row.name && row.name.includes("<b>") && !row.name.includes("TOTAL")) { %}
                     <tr>
-                        <td colspan="5" class="section-header">{%= row.name %}</td>
+                        <td colspan="6" class="section-header">{%= row.name %}</td>
                     </tr>
                 {% } else if (row.name && row.name.includes("<b>TOTAL</b>")) { %}
                     <tr class="total-row">
@@ -127,6 +128,7 @@
                         <td>TOTAL</td>
                         <td>{%= parseFloat(row.jayashree_live || 0).toFixed(2) %} KGS</td>
                         <td>{%= parseFloat(row.thusmaa_live || 0).toFixed(2) %} KGS</td>
+                        <td>{%= parseFloat(row.warehouse_live || 0).toFixed(2) %} KGS</td>
                         <td>{%= parseFloat(row.total_live || 0).toFixed(2) %} KGS</td>
                     </tr>
                 {% } else if (row.s_no) { %}
@@ -135,6 +137,7 @@
                         <td style="text-align: left;">{%= row.name %}</td>
                         <td>{%= parseFloat(row.jayashree_live || 0).toFixed(2) %}</td>
                         <td>{%= parseFloat(row.thusmaa_live || 0).toFixed(2) %}</td>
+                        <td>{%= parseFloat(row.warehouse_live || 0).toFixed(2) %}</td>
                         <td>{%= parseFloat(row.total_live || 0).toFixed(2) %}</td>
                     </tr>
                 {% } %}

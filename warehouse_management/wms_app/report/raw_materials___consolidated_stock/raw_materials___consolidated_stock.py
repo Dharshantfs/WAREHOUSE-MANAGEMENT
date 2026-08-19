@@ -22,6 +22,8 @@ def get_columns():
         {"fieldname": "jayashree_live", "label": _("JAYASHREE LIVE [ KGS ]"), "fieldtype": "Float", "width": 150},
         {"fieldname": "thusmaa_yest", "label": _("THUSMAA YESTERDAY [ KGS ]"), "fieldtype": "Float", "width": 150},
         {"fieldname": "thusmaa_live", "label": _("THUSMAA LIVE [ KGS ]"), "fieldtype": "Float", "width": 150},
+        {"fieldname": "warehouse_yest", "label": _("WAREHOUSE YESTERDAY [ KGS ]"), "fieldtype": "Float", "width": 160},
+        {"fieldname": "warehouse_live", "label": _("WAREHOUSE LIVE [ KGS ]"), "fieldtype": "Float", "width": 150},
         {"fieldname": "total_yest", "label": _("TOTAL YESTERDAY"), "fieldtype": "Float", "width": 120},
         {"fieldname": "total_live", "label": _("TOTAL LIVE"), "fieldtype": "Float", "width": 120},
     ]
@@ -30,11 +32,12 @@ def get_data(date, yesterday):
     jayashree_company = "Jayashree Spun Bond - 1ZT"
     thusmaa_company = "Thusma SMS Nonwovens Private Limited - 1Z0"
     wh_pattern = "%Raw Material%"
+    jsb_warehouse_pattern = "%Jayashree Warehouse - JSB-1ZT%"
     
     # Items in Raw Material group
     items = frappe.get_all("Item", filters={"item_group": "Raw Material"}, fields=["name", "item_name"])
     
-    def get_stock(company_pattern, wh_pattern, as_on_date):
+    def get_stock(company_pattern, warehouse_pattern, as_on_date):
         query = """
             SELECT item_code, sum(actual_qty) as balance_qty
             FROM `tabStock Ledger Entry`
@@ -42,13 +45,26 @@ def get_data(date, yesterday):
             AND is_cancelled = 0
             GROUP BY item_code
         """
-        result = frappe.db.sql(query, (company_pattern, wh_pattern, as_on_date), as_dict=1)
+        result = frappe.db.sql(query, (company_pattern, warehouse_pattern, as_on_date), as_dict=1)
+        return {r.item_code: flt(r.balance_qty) for r in result}
+
+    def get_stock_by_warehouse(warehouse_pattern, as_on_date):
+        query = """
+            SELECT item_code, sum(actual_qty) as balance_qty
+            FROM `tabStock Ledger Entry`
+            WHERE warehouse LIKE %s AND posting_date <= %s
+            AND is_cancelled = 0
+            GROUP BY item_code
+        """
+        result = frappe.db.sql(query, (warehouse_pattern, as_on_date), as_dict=1)
         return {r.item_code: flt(r.balance_qty) for r in result}
         
     jaya_yest_stock = get_stock(jayashree_company, wh_pattern, yesterday)
     jaya_live_stock = get_stock(jayashree_company, wh_pattern, date)
     thus_yest_stock = get_stock(thusmaa_company, wh_pattern, yesterday)
     thus_live_stock = get_stock(thusmaa_company, wh_pattern, date)
+    wh_yest_stock = get_stock_by_warehouse(jsb_warehouse_pattern, yesterday)
+    wh_live_stock = get_stock_by_warehouse(jsb_warehouse_pattern, date)
     
     lamination_items = ["LD SABIC 7019 EC", "PP - SABIC 519A", "PP - RELIANCE LDPE", "PP - SUMITOMO LDPE"]
     
@@ -56,6 +72,7 @@ def get_data(date, yesterday):
     poly_lam_list = []
     filler_list = []
     ppa_list = []
+    masterbatch_list = []
     
     for item in items:
         item_name = item.item_name or item.name
@@ -71,9 +88,11 @@ def get_data(date, yesterday):
             "jayashree_live": jaya_live_stock.get(code, 0.0),
             "thusmaa_yest": thus_yest_stock.get(code, 0.0),
             "thusmaa_live": thus_live_stock.get(code, 0.0),
+            "warehouse_yest": wh_yest_stock.get(code, 0.0),
+            "warehouse_live": wh_live_stock.get(code, 0.0),
         }
-        row["total_yest"] = row["jayashree_yest"] + row["thusmaa_yest"]
-        row["total_live"] = row["jayashree_live"] + row["thusmaa_live"]
+        row["total_yest"] = row["jayashree_yest"] + row["thusmaa_yest"] + row["warehouse_yest"]
+        row["total_live"] = row["jayashree_live"] + row["thusmaa_live"] + row["warehouse_live"]
         
         # Only add to list if there is some stock or it's required. Let's add all matching for now.
         if item_name in lamination_items:
@@ -82,6 +101,8 @@ def get_data(date, yesterday):
             poly_list.append(row)
         elif item_name.startswith("FL-") or item_name.startswith("FL -"):
             filler_list.append(row)
+        elif item_name.startswith("MB -") or item_name.startswith("MB-"):
+            masterbatch_list.append(row)
         elif item_name.startswith("SA -") or item_name.startswith("SA-"):
             if item_name == "SA - WELLSET UV":
                 pass
@@ -91,11 +112,23 @@ def get_data(date, yesterday):
     # Compile the final data with sections
     data = []
     
+    empty_section = {
+        "s_no": "",
+        "jayashree_yest": "",
+        "jayashree_live": "",
+        "thusmaa_yest": "",
+        "thusmaa_live": "",
+        "warehouse_yest": "",
+        "warehouse_live": "",
+        "total_yest": "",
+        "total_live": "",
+    }
+    
     def add_section(title, rows):
         if not rows: return
-        data.append({"s_no": "", "name": f"<b>{title}</b>", "jayashree_yest": "", "jayashree_live": "", "thusmaa_yest": "", "thusmaa_live": "", "total_yest": "", "total_live": ""})
+        data.append({**empty_section, "name": f"<b>{title}</b>"})
         
-        sum_jy = sum_jl = sum_ty = sum_tl = tot_y = tot_l = 0
+        sum_jy = sum_jl = sum_ty = sum_tl = sum_wy = sum_wl = tot_y = tot_l = 0
         for idx, r in enumerate(rows, 1):
             r["s_no"] = str(idx)
             data.append(r)
@@ -103,6 +136,8 @@ def get_data(date, yesterday):
             sum_jl = round(sum_jl + r["jayashree_live"], 2)
             sum_ty = round(sum_ty + r["thusmaa_yest"], 2)
             sum_tl = round(sum_tl + r["thusmaa_live"], 2)
+            sum_wy = round(sum_wy + r["warehouse_yest"], 2)
+            sum_wl = round(sum_wl + r["warehouse_live"], 2)
             tot_y = round(tot_y + r["total_yest"], 2)
             tot_l = round(tot_l + r["total_live"], 2)
             
@@ -114,6 +149,8 @@ def get_data(date, yesterday):
             "jayashree_live": sum_jl,
             "thusmaa_yest": sum_ty,
             "thusmaa_live": sum_tl,
+            "warehouse_yest": sum_wy,
+            "warehouse_live": sum_wl,
             "total_yest": tot_y,
             "total_live": tot_l
         })
@@ -123,5 +160,6 @@ def get_data(date, yesterday):
     add_section("POLYPROPYLENE - LAMINATION", poly_lam_list)
     add_section("FILLER", filler_list)
     add_section("PPA", ppa_list)
+    add_section("MASTERBATCH", masterbatch_list)
     
     return data
